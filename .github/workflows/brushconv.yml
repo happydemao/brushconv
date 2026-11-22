@@ -1,0 +1,90 @@
+name: Brush Converter
+
+# Pushing a `brushconv-v*` tag builds one small standalone `brushconv` binary for
+# each desktop platform and attaches them to that tag's release. Running the
+# workflow by hand keeps the binaries as the run's artifacts and releases nothing.
+#
+#   brushconv-linux-x64            glibc 2.35+
+#   brushconv-linux-arm64          the same for 64-bit ARM
+#   brushconv-macos-x64            Intel Macs
+#   brushconv-macos-arm64          Apple silicon
+#   brushconv-windows-x64.exe      Windows 10 and 11
+
+on:
+  push:
+    tags: ['brushconv-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brushconv-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: "1.99.0"
+
+jobs:
+  build:
+    name: ${{ matrix.asset }}
+    # a private copy pays for each runner's minutes; by hand is always allowed
+    if: ${{ !github.event.repository.private || github.event_name == 'workflow_dispatch' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            asset: brushconv-linux-x64
+          - os: ubuntu-22.04-arm
+            asset: brushconv-linux-arm64
+          - os: macos-15-intel
+            asset: brushconv-macos-x64
+          - os: macos-15
+            asset: brushconv-macos-arm64
+          - os: windows-2025
+            asset: brushconv-windows-x64.exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: brushconv-${{ matrix.asset }}
+      - run: cargo build --release -p brushconv
+      - name: Collect the binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          bin=target/release/brushconv
+          # Windows adds the extension
+          if [ -f "$bin.exe" ]; then bin="$bin.exe"; fi
+          cp "$bin" "dist/${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    name: Attach to the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/brushconv-v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: brushconv ${{ github.ref_name }}
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

@@ -383,6 +383,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "brushconv"
+version = "0.1.0"
+dependencies = [
+ "png",
+ "procraft-core",
+ "procraft-engine",
+ "serde_json",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

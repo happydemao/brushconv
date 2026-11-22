@@ -9163,8 +9163,8 @@ class CanvasViewModel(app: Application) : AndroidViewModel(app) {
         const val BRUSH_EXTENSION = "brush"
         const val BRUSH_SET_EXTENSION = "brushset"
         const val BRUSH_LIBRARY_EXTENSION = "brushlibrary"
-        /** Other apps' brush files: Photoshop's, GIMP's brushes, pipes and generated brushes, Krita's presets and bundles, Clip Studio's sub tools and their groups. */
-        val OTHER_BRUSH_EXTENSIONS = listOf("abr", "gbr", "gih", "vbr", "kpp", "bundle", "sut", "sutg")
+        /** Other apps' brush files: Photoshop's, GIMP's brushes, pipes and generated brushes, Krita's presets and bundles, Clip Studio's sub tools and their groups, Infinite Painter's brushes. */
+        val OTHER_BRUSH_EXTENSIONS = listOf("abr", "gbr", "gih", "vbr", "kpp", "bundle", "sut", "sutg", "prbr")
         val PACKAGE_LABEL = PACKAGE_EXTENSION.replaceFirstChar(Char::titlecase)
 
         /** Several artworks shared as one PDF from the gallery itself (not a stack) are named so. */

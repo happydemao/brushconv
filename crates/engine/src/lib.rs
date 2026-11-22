@@ -39,6 +39,7 @@ pub mod outline;
 pub mod palette;
 pub mod par;
 pub mod plist;
+pub mod prbr;
 pub mod preview;
 pub mod profile;
 pub mod psd;

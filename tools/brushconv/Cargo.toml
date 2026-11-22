@@ -1,0 +1,25 @@
+[package]
+name = "brushconv"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+license.workspace = true
+description = "Cross-platform brush format converter: ProCraft .brush/.brushset, Photoshop .abr, Krita .kpp/.bundle, GIMP .gbr, Clip Studio .sut"
+
+[[bin]]
+name = "brushconv"
+path = "src/main.rs"
+
+[lib]
+name = "brushconv"
+path = "src/lib.rs"
+
+[dependencies]
+procraft-core = { path = "../../crates/core" }
+procraft-engine = { path = "../../crates/engine" }
+png = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

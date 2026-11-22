@@ -125,7 +125,7 @@ impl CanvasSession {
 
 /// Other apps' brush files, by the endings of their names: Photoshop's, GIMP's brushes, pipes and
 /// generated brushes, Krita's presets and bundles, Clip Studio's sub tools.
-pub const OTHER_BRUSH_EXTENSIONS: [&str; 8] = ["abr", "gbr", "gih", "vbr", "kpp", "bundle", "sut", "sutg"];
+pub const OTHER_BRUSH_EXTENSIONS: [&str; 9] = ["abr", "gbr", "gih", "vbr", "kpp", "bundle", "sut", "sutg", "prbr"];
 
 /// Whether `bytes` are a zip holding brushes (a brush's archive, or a set's list), whatever the
 /// file is called: a brush or set file sent on as a plain zip.
@@ -853,6 +853,9 @@ fn other_brushes(bytes: &[u8], name: String) -> Option<(String, Vec<Brush>)> {
     if let Some(brushes) = procraft_engine::csp::read(bytes) {
         return Some((name, each(&brushes, csp_brush)));
     }
+    if let Some(p) = procraft_engine::prbr::read(bytes) {
+        return Some((name, vec![prbr_brush(&p)]));
+    }
     // a preset alone has only the pictures it holds itself (newer ones do): one it only names (one
     // that came with Krita) comes round
     let preset = krita::read_preset(bytes, &|_| None)?;
@@ -938,6 +941,68 @@ fn csp_brush(c: &procraft_engine::csp::CspBrush) -> Brush {
         b.set_setting("grain_depth_jitter", d.random.map_or(0.0, |least| 1.0 - least));
     }
     b
+}
+
+/// A brush of an Infinite Painter `.prbr`: its head (a soft round one, or the picture the brush
+/// holds), spacing, size, opacity and flow, and the pressure's effect on its size and flow.
+///
+/// The heads and textures the app ships are named, not held in the file, so a brush that names one
+/// comes as a round tip at the head's softness; a custom one comes as its picture. Its texture and
+/// its tilt dynamics have no picture or controls of ours to go to, and stay behind.
+fn prbr_brush(p: &procraft_engine::prbr::PrbrBrush) -> Brush {
+    use procraft_engine::brush::PressureCurve;
+    let mut b = match p.custom_head_png.as_deref().and_then(|png| png_tip(png, false)) {
+        Some(t) => tip_brush(&procraft_engine::abr::AbrTip { name: p.name.clone(), ..t }),
+        None => Brush { name: p.name.clone(), ..Brush::round_pen() },
+    };
+    if let Some(softness) = p.softness {
+        b.hardness = (1.0 - softness).clamp(0.0, 1.0);
+    }
+    // the spacing first: it sets how big the brush may be
+    if let Some(spacing) = p.spacing {
+        b.spacing = Brush::spacing_within_reach(spacing);
+    }
+    // its size from its pixels, as a sampled tip's is
+    if let Some(px) = p.size {
+        brushfile::set_sizes(&mut b, px * ABR_SIZE_PER_PIXEL, Some(0.01));
+    }
+    if let Some(opacity) = p.opacity {
+        b.max_opacity = opacity.clamp(0.0, 1.0);
+        b.min_opacity = b.min_opacity.min(b.max_opacity);
+    }
+    if let Some(flow) = p.flow {
+        b.flow = flow.clamp(0.0, 1.0);
+    }
+    if let Some(angle) = p.angle {
+        b.shape.rotation = angle.rem_euclid(std::f32::consts::TAU);
+    }
+    // the pressure's effects, each through its own profile from the pressure's none to its all
+    if p.pressure_size {
+        b.pressure_size = 1.0;
+        b.size_curve = prbr_curve(&p.size_profile);
+    }
+    if p.pressure_flow {
+        b.set_setting("pressure_flow", 1.0);
+        b.pressure_curves.set(PressureCurve::Flow, Some(prbr_curve(&p.flow_profile)));
+    }
+    if let Some(scatter) = p.scatter {
+        b.set_setting("scatter", scatter);
+    }
+    if let Some(jitter) = p.size_jitter {
+        b.set_setting("jitter_size", jitter);
+    }
+    // the sample stroke the app shows, as the brush's preview
+    if let Some(preview) = &p.preview_png {
+        b.thumbnail = Some(preview.as_slice().into());
+    }
+    b
+}
+
+/// A curve from a profile's flat pairs (pressure and value), the identity if it has fewer than two.
+fn prbr_curve(profile: &[f32]) -> Curve {
+    use procraft_engine::geom::Vec2;
+    let points: Vec<Vec2> = profile.as_chunks::<2>().0.iter().map(|&[x, y]| Vec2::new(x, y)).collect();
+    Curve::new(&points)
 }
 
 /// Gives `b` a Clip Studio spray: its stamp `stamp` pixels across holding one particle in its middle
