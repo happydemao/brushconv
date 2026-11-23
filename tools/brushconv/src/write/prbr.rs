@@ -8,7 +8,7 @@
 
 use procraft_engine::brush::{Brush, PressureCurve};
 use procraft_engine::curve::Curve;
-use procraft_engine::zip::ZipWriter;
+use procraft_engine::zip::{Ready, ZipWriter};
 use serde_json::{Value, json};
 
 use crate::Result;
@@ -41,13 +41,17 @@ pub fn write(brush: &Brush) -> Result<Vec<u8>> {
         "jitter-properties": jitter_section(brush),
         "texture-properties": texture_section(),
     });
+    let mut properties = properties;
+    whole_numbers(&mut properties);
+    // The app's own exports store every entry, so doing the same keeps the archive as close to
+    // what it writes as the settings are.
     let mut zip = ZipWriter::new();
-    zip.add("preview", &preview::stroke_sized(brush, PREVIEW.0, PREVIEW.1)?);
-    zip.add(HEAD, &head);
+    zip.add_ready("preview", Ready::of(&preview::stroke_sized(brush, PREVIEW.0, PREVIEW.1)?, false));
+    zip.add_ready(HEAD, Ready::of(&head, false));
     if let Some(texture) = &texture {
-        zip.add(TEXTURE, texture);
+        zip.add_ready(TEXTURE, Ready::of(texture, false));
     }
-    zip.add("properties.json", properties.to_string().as_bytes());
+    zip.add_ready("properties.json", Ready::of(properties.to_string().as_bytes(), false));
     Ok(zip.finish())
 }
 
@@ -222,6 +226,24 @@ fn pixels(brush: &Brush) -> f32 {
     (brush.max_size / (SIZE_PER_PIXEL * brush.size_unit()).max(f32::EPSILON)).clamp(0.5, 5000.0)
 }
 
+/// Writes whole numbers as whole numbers: the app's own files have `"style": 1`, not `1.0`, and a
+/// strict reader can tell the difference.
+fn whole_numbers(value: &mut Value) {
+    match value {
+        Value::Number(number) => {
+            if let Some(float) = number.as_f64()
+                && float.fract() == 0.0
+                && float.abs() < 9_000_000_000_000_000.0
+            {
+                *number = serde_json::Number::from(float as i64);
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(whole_numbers),
+        Value::Object(map) => map.values_mut().for_each(whole_numbers),
+        _ => {}
+    }
+}
+
 /// A curve as the app's flat profile: pressure and value, in pairs.
 fn profile(curve: &Curve) -> Vec<f32> {
     curve.points().iter().flat_map(|p| [round32(p.x), round32(p.y)]).collect()
@@ -254,5 +276,15 @@ mod tests {
         assert!(read.pressure_size);
         assert_eq!(read.custom_head_png.as_deref().map(|p| p.starts_with(b"\x89PNG")), Some(true));
         assert!(read.preview_png.is_some());
+    }
+
+    #[test]
+    fn whole_settings_are_written_as_whole_numbers() {
+        let brush = Brush::round_pen();
+        let bytes = write(&brush).expect("write");
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("\"paint-opacity\":1"), "got {text:.600}");
+        assert!(!text.contains("\"paint-opacity\":1.0"));
+        assert!(text.contains("\"spacing\":0.08") || text.contains("\"spacing\":0.1"));
     }
 }

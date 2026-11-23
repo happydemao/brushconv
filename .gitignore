@@ -12,3 +12,6 @@ replay_pid*.log
 /ios/ProCraft.xcodeproj/
 # Python bytecode from the tools
 __pycache__/
+
+# macOS folder metadata
+.DS_Store

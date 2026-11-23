@@ -80,10 +80,12 @@ zips a white-on-transparent `head.png`, a `texture.png` when the brush has a gra
 a 512×128 sample stroke as `preview`, and a `properties.json` with every section the
 app's own exports have, defaults left where ProCraft has no control. Infinite
 Painter does not document how it stores embedded art (its own heads are named, not
-held), so the `custom-head` / `custom-stroke texture` convention is a best guess;
-the file round-trips through this tool's own reader exactly for size, opacity,
-softness, angle, spacing and the pressure switches, but check it in the app before
-relying on it.
+held), so the `custom-head` / `custom-stroke texture` convention is a best guess.
+Whole numbers are written as integers and the zip entries are stored, as the app's
+own files do, so a strict reader is not tripped by `1.0` or deflate; the file
+round-trips through this tool's own reader exactly for size, opacity, softness,
+angle, spacing and the pressure switches, but check it in the app before relying on
+it.
 
 ## Usage
 
