@@ -5,6 +5,7 @@ mod brush;
 mod gbr;
 mod json;
 mod krita;
+mod pcbrushes;
 mod prbr;
 mod sai;
 
@@ -34,6 +35,8 @@ pub enum OutputFormat {
     Prbr,
     /// PaintTool SAI2's `.saitdat`, one per brush.
     Sai2,
+    /// PhotoCraft's `.pcbrushes`, a group holding all of them.
+    Pcbrushes,
     /// A JSON description of every brush.
     Json,
 }
@@ -50,6 +53,7 @@ impl OutputFormat {
             "gbr" | "gimp" | "gimp-brush" => Some(OutputFormat::Gbr),
             "prbr" | "infinite-painter" | "infinitepainter" => Some(OutputFormat::Prbr),
             "saitdat" | "sai" | "sai2" | "painttool-sai" => Some(OutputFormat::Sai2),
+            "pcbrushes" | "photocraft" | "photocraft-group" => Some(OutputFormat::Pcbrushes),
             "json" | "meta" | "metadata" => Some(OutputFormat::Json),
             _ => None,
         }
@@ -66,6 +70,7 @@ impl OutputFormat {
             "gbr" => Some(OutputFormat::Gbr),
             "prbr" => Some(OutputFormat::Prbr),
             "saitdat" => Some(OutputFormat::Sai2),
+            "pcbrushes" => Some(OutputFormat::Pcbrushes),
             "json" => Some(OutputFormat::Json),
             _ => None,
         }
@@ -81,6 +86,7 @@ impl OutputFormat {
             OutputFormat::Gbr => "gbr",
             OutputFormat::Prbr => "prbr",
             OutputFormat::Sai2 => "saitdat",
+            OutputFormat::Pcbrushes => "pcbrushes",
             OutputFormat::Json => "json",
         }
     }
@@ -95,13 +101,21 @@ impl OutputFormat {
             OutputFormat::Gbr => "GIMP brush",
             OutputFormat::Prbr => "Infinite Painter brush",
             OutputFormat::Sai2 => "PaintTool SAI2 tool",
+            OutputFormat::Pcbrushes => "PhotoCraft brush group",
             OutputFormat::Json => "JSON metadata",
         }
     }
 
     /// Whether several inputs' brushes can be combined into one output file.
     pub fn merges_inputs(self) -> bool {
-        matches!(self, OutputFormat::BrushSet | OutputFormat::Abr | OutputFormat::Bundle | OutputFormat::Json)
+        matches!(
+            self,
+            OutputFormat::BrushSet
+                | OutputFormat::Abr
+                | OutputFormat::Bundle
+                | OutputFormat::Pcbrushes
+                | OutputFormat::Json
+        )
     }
 
     /// Whether a file holds one brush (so a set needs a file each).
@@ -167,6 +181,7 @@ pub fn write_set(set: &BrushSet, format: OutputFormat, out: Option<&Path>, name:
         OutputFormat::Gbr => gbr::write(first)?,
         OutputFormat::Prbr => prbr::write(first)?,
         OutputFormat::Sai2 => sai::write(first)?,
+        OutputFormat::Pcbrushes => pcbrushes::write(&title, &set.brushes)?,
         OutputFormat::Json => json::write(set)?,
     };
     std::fs::write(&path, bytes)?;

@@ -35,6 +35,8 @@ pub enum SourceFormat {
     Prbr,
     /// PaintTool SAI2's custom tool, `.saitdat`.
     Sai2,
+    /// PhotoCraft's `.pcbrushes` brush group.
+    Pcbrushes,
     /// Recognised by its contents but not its name.
     Unknown,
 }
@@ -55,6 +57,7 @@ impl SourceFormat {
             SourceFormat::CspGroup => "Clip Studio sub tool group",
             SourceFormat::Prbr => "Infinite Painter brush",
             SourceFormat::Sai2 => "PaintTool SAI2 tool",
+            SourceFormat::Pcbrushes => "PhotoCraft brush group",
             SourceFormat::Unknown => "brush file",
         }
     }
@@ -68,6 +71,7 @@ impl SourceFormat {
                 | SourceFormat::Abr
                 | SourceFormat::KritaBundle
                 | SourceFormat::CspGroup
+                | SourceFormat::Pcbrushes
         )
     }
 }
@@ -89,6 +93,7 @@ pub fn detect_format(bytes: &[u8], file_name: &str) -> SourceFormat {
         "sutg" => Some(SourceFormat::CspGroup),
         "prbr" => Some(SourceFormat::Prbr),
         "saitdat" => Some(SourceFormat::Sai2),
+        "pcbrushes" => Some(SourceFormat::Pcbrushes),
         _ => None,
     };
     if let Some(format) = by_name {
@@ -126,6 +131,9 @@ fn sniff(bytes: &[u8]) -> SourceFormat {
     if looks_like_sai2(bytes) {
         return SourceFormat::Sai2;
     }
+    if looks_like_pcbrushes(bytes) {
+        return SourceFormat::Pcbrushes;
+    }
     if looks_like_gbr(bytes) {
         return SourceFormat::Gbr;
     }
@@ -133,6 +141,12 @@ fn sniff(bytes: &[u8]) -> SourceFormat {
         return SourceFormat::Abr;
     }
     SourceFormat::Unknown
+}
+
+/// A PhotoCraft group is JSON naming its own format near the start.
+fn looks_like_pcbrushes(bytes: &[u8]) -> bool {
+    let head = bytes.get(..2048).unwrap_or(bytes);
+    String::from_utf8_lossy(head).contains("photocraft-brush-group")
 }
 
 /// A SAI2 custom tool is text with a `tidstr=` header and a `--EOF--` end.
@@ -182,7 +196,8 @@ pub fn read_bytes(bytes: &[u8], file_name: &str) -> Result<BrushSet> {
     let read = procraft_core::read_any_brushes(bytes, Some(file_name.to_owned())).ok_or_else(|| {
         Error::new(format!(
             "could not read {file_name} as a brush file ({}). Supported: .brush, .brushset, \
-             .brushlibrary, .abr, .kpp, .bundle, .gbr, .gih, .vbr, .sut, .sutg, .prbr, .saitdat",
+             .brushlibrary, .abr, .kpp, .bundle, .gbr, .gih, .vbr, .sut, .sutg, .prbr, .saitdat, \
+             .pcbrushes",
             source.label()
         ))
     })?;

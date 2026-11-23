@@ -96,6 +96,19 @@ fn reads(source: SourceFormat) -> &'static [&'static str] {
         SourceFormat::Csp | SourceFormat::CspGroup => {
             &["name", "tip", "grain", "spacing", "hardness", "opacity", "flow", "pressure_size", "dual"]
         }
+        SourceFormat::Pcbrushes => &[
+            "name",
+            "tip",
+            "spacing",
+            "hardness",
+            "size",
+            "opacity",
+            "flow",
+            "pressure_size",
+            "pressure_opacity",
+            "rotation",
+            "roundness",
+        ],
         SourceFormat::Sai2 => &[
             "name",
             "tip",
@@ -168,6 +181,18 @@ fn writes(target: OutputFormat) -> &'static [&'static str] {
             "scatter",
             "jitter",
             "rotation",
+        ],
+        OutputFormat::Pcbrushes => &[
+            "name",
+            "spacing",
+            "hardness",
+            "size",
+            "opacity",
+            "flow",
+            "pressure_size",
+            "pressure_opacity",
+            "rotation",
+            "roundness",
         ],
         OutputFormat::Sai2 => &[
             "name",

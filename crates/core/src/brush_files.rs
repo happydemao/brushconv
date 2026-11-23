@@ -125,8 +125,8 @@ impl CanvasSession {
 
 /// Other apps' brush files, by the endings of their names: Photoshop's, GIMP's brushes, pipes and
 /// generated brushes, Krita's presets and bundles, Clip Studio's sub tools.
-pub const OTHER_BRUSH_EXTENSIONS: [&str; 10] =
-    ["abr", "gbr", "gih", "vbr", "kpp", "bundle", "sut", "sutg", "prbr", "saitdat"];
+pub const OTHER_BRUSH_EXTENSIONS: [&str; 11] =
+    ["abr", "gbr", "gih", "vbr", "kpp", "bundle", "sut", "sutg", "prbr", "saitdat", "pcbrushes"];
 
 /// Whether `bytes` are a zip holding brushes (a brush's archive, or a set's list), whatever the
 /// file is called: a brush or set file sent on as a plain zip.
@@ -860,6 +860,10 @@ fn other_brushes(bytes: &[u8], name: String) -> Option<(String, Vec<Brush>)> {
     if let Some(t) = procraft_engine::sai::read(bytes) {
         return Some((name, vec![sai_brush(&t)]));
     }
+    if let Some(g) = procraft_engine::pcbrushes::read(bytes) {
+        let name = if g.name.trim().is_empty() { name } else { g.name.clone() };
+        return Some((name, each(&g.brushes, pc_brush)));
+    }
     // a preset alone has only the pictures it holds itself (newer ones do): one it only names (one
     // that came with Krita) comes round
     let preset = krita::read_preset(bytes, &|_| None)?;
@@ -1009,6 +1013,46 @@ fn prbr_brush(p: &procraft_engine::prbr::PrbrBrush) -> Brush {
 ///
 /// SAI2's mixing maps onto the wet brush: its water content is the dilution, how much it mixes
 /// with what is under it is the pull, and how far its colour stretches is the charge.
+fn pc_brush(p: &procraft_engine::pcbrushes::PcBrush) -> Brush {
+    let mut b = Brush { name: p.name.clone(), ..Brush::round_pen() };
+    b.hardness = p.hardness.clamp(0.0, 1.0);
+    if let Some(t) = &p.tip {
+        give_tip(&mut b, t);
+    }
+    b.spacing = Brush::spacing_within_reach(p.spacing);
+    // PhotoCraft's size is in canvas pixels, as the studio's own sizes are
+    let px = p.size.max(0.5);
+    let most = px.min(b.most_size() * b.size_unit());
+    b.max_size = most;
+    b.min_size = (px * 0.01).clamp(0.5, most);
+    b.max_opacity = p.opacity.clamp(0.0, 1.0);
+    b.min_opacity = b.max_opacity;
+    b.flow = p.flow.clamp(0.0, 1.0);
+    if p.pressure_size {
+        b.pressure_size = 1.0;
+        b.size_curve =
+            Curve::new(&[procraft_engine::geom::Vec2::new(0.0, 0.0), procraft_engine::geom::Vec2::new(1.0, 1.0)]);
+    }
+    if p.pressure_opacity {
+        b.pressure_opacity = 1.0;
+        b.opacity_curve =
+            Curve::new(&[procraft_engine::geom::Vec2::new(0.0, 0.0), procraft_engine::geom::Vec2::new(1.0, 1.0)]);
+    }
+    // PhotoCraft turns a tip counter-clockwise, ours clockwise
+    if p.angle != 0.0 {
+        b.shape.rotation = (-p.angle).to_radians().rem_euclid(std::f32::consts::TAU);
+    }
+    if p.roundness < 1.0 {
+        b.shape.roundness = p.roundness.clamp(procraft_engine::stroke::LEAST_ROUNDNESS, 1.0);
+    }
+    for (key, on) in [("flip_x", p.flip_x), ("flip_y", p.flip_y)] {
+        if on {
+            b.set_setting(key, 1.0);
+        }
+    }
+    b
+}
+
 fn sai_brush(t: &procraft_engine::sai::SaiTool) -> Brush {
     let mut b = Brush { name: t.name.clone(), ..Brush::round_pen() };
     b.hardness = t.hardness;
@@ -4627,5 +4671,39 @@ mod tests {
         );
         assert!(found >= kept as u64 * 9 / 10, "{found} strokes taken of {kept} kept");
         assert!(warm < cold, "written in {warm:?} after the library was shown, {cold:?} before");
+    }
+
+    #[test]
+    fn a_photocraft_group_comes_in_as_its_brushes() {
+        let group = serde_json::json!({
+            "format": "photocraft-brush-group",
+            "version": 1,
+            "group": "Soft",
+            "presets": [{
+                "name": "Soft Dot",
+                "brush": {
+                    "size": 80.0, "hardness": 0.2, "spacing": 0.05, "opacity": 0.7,
+                    "flow": 0.9, "angle": 90.0, "roundness": 0.5, "flipX": true,
+                    "pressureSize": true, "pressureOpacity": true, "tip": "round"
+                }
+            }],
+            "tips": {}
+        });
+        let bytes = serde_json::to_vec(&group).expect("group json");
+        let (name, brushes) = other_brushes(&bytes, "Soft".to_owned()).expect("a group");
+        assert_eq!(name, "Soft");
+        assert_eq!(brushes.len(), 1);
+        let b = brushes.first().expect("a brush");
+        assert_eq!(b.name, "Soft Dot");
+        assert!((b.max_size - 80.0).abs() < 1e-3, "size {}", b.max_size);
+        assert!((b.hardness - 0.2).abs() < 1e-6);
+        assert!((b.spacing - 0.05).abs() < 1e-6);
+        assert!((b.max_opacity - 0.7).abs() < 1e-6);
+        // PhotoCraft turns a tip counter-clockwise, ours clockwise: a quarter turn either way
+        assert!((b.shape.rotation - 3.0 * std::f32::consts::FRAC_PI_2).abs() < 1e-5, "{}", b.shape.rotation);
+        assert!((b.shape.roundness - 0.5).abs() < 1e-6);
+        assert_eq!((b.setting("flip_x"), b.setting("flip_y")), (1.0, 0.0));
+        assert!(b.pressure_size > 0.0 && b.pressure_opacity > 0.0);
+        assert!(b.shape.source.is_none(), "a round tip is drawn from the hardness, not stored");
     }
 }

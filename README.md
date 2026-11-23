@@ -1,7 +1,7 @@
 <h1 align="center">Brush Converter</h1>
 
 <p align="center">
-  <b>Convert brush files between ProCraft, Photoshop, Krita, GIMP, Infinite Painter and PaintTool SAI2 — from the command line or from a small Android app.</b><br>
+  <b>Convert brush files between ProCraft, Photoshop, Krita, GIMP, Infinite Painter, PaintTool SAI2 and PhotoCraft — from the command line or from a small Android app.</b><br>
   One Rust binary, no Python, no GPU: read a brush or a whole set, write it in any of the other formats, and see exactly which settings each format keeps.
 </p>
 
@@ -21,6 +21,7 @@
 | GIMP `.gbr` | yes | yes | one grey tip, name and spacing |
 | Infinite Painter `.prbr` | yes | yes | the writer is experimental; see [`tools/brushconv/README.md`](tools/brushconv/README.md) |
 | PaintTool SAI2 `.saitdat` | yes | yes | SAI2 keeps textures beside the tool, so a converted tool gets a round tip |
+| PhotoCraft `.pcbrushes` | yes | yes | a group file names a computed tip; PhotoCraft keeps sampled tips in a folder beside it |
 | CSP `.sut`, `.sutg` | yes | no | SQLite container, no writer |
 | JSON | — | yes | every setting the converter knows, for scripting |
 

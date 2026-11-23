@@ -74,6 +74,7 @@ fn one_brush_round_trips_through_the_one_brush_formats() {
         (OutputFormat::Gbr, "Round Pen.gbr"),
         (OutputFormat::Prbr, "Round Pen.prbr"),
         (OutputFormat::Sai2, "Round Pen.saitdat"),
+        (OutputFormat::Pcbrushes, "Round Pen.pcbrushes"),
     ] {
         let single = brushconv::BrushSet {
             name: brush.name.clone(),
@@ -138,4 +139,26 @@ fn a_sai2_tool_becomes_a_brush() {
     assert!(out.is_file());
     let back = read_path(&out).expect("read back");
     assert!((back.brushes[0].max_size - 200.0).abs() < 0.5);
+}
+
+#[test]
+fn a_photocraft_group_round_trips() {
+    let set = read_path(&fixture()).expect("read");
+    let scratch = Scratch::new("pcbrushes");
+    let out = scratch.path("Inking.pcbrushes");
+    let written = write_set(&set, OutputFormat::Pcbrushes, Some(&out), None).expect("write");
+    assert_eq!(written.len(), 1, "a group holds every brush in one file");
+    let back = read_path(&out).expect("read back");
+    assert_eq!(back.source, brushconv::SourceFormat::Pcbrushes);
+    assert_eq!(back.brushes.len(), 12);
+    for (before, after) in set.brushes.iter().zip(&back.brushes) {
+        assert_eq!(before.name, after.name);
+        assert!(
+            (before.max_size - after.max_size).abs() < 0.5,
+            "{}: {} vs {}",
+            before.name,
+            before.max_size,
+            after.max_size
+        );
+    }
 }

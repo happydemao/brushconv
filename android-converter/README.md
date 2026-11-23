@@ -17,6 +17,7 @@ no canvas, no other feature.
 | GIMP `.pat` | yes | — | read as a textured stamp |
 | Infinite Painter `.prbr` | yes | yes (experimental) | `properties.json`, a sample stroke and pictures |
 | PaintTool SAI2 `.saitdat` | yes | yes (experimental) | a tool's text sections: size, density, scatter, wet mixing |
+| PhotoCraft `.pcbrushes` | yes | yes | a JSON group: size, hardness, spacing, pressure switches, mirroring; a stored tip is read as its preview |
 | JSON | — | yes | every setting, for scripts |
 
 A format's fidelity is the same as the CLI's: the full per-format list of what can
@@ -28,7 +29,11 @@ curves, scatter, mirroring, colour jitter and a dual brush (as a masking brush);
 grain, size maximum, opacity, spacing, pressure curves, scatter and jitter;
 `.saitdat` keeps the size and least size, density, hardness, spacing, angle, scatter,
 jitter and wet mixing but not the form and texture pictures (SAI2 keeps those beside
-the tool). Both are new enough to be marked experimental.
+the tool). `.pcbrushes` keeps size, hardness, spacing, opacity, flow, angle,
+roundness, mirroring and the pressure switches; PhotoCraft keeps a sampled tip in a
+`tips/` folder beside a group file, so a converted brush gets a computed round tip
+(convert to `.abr` to carry the bitmap). The first two are new enough to be marked
+experimental.
 
 ## The brush editor
 
@@ -101,5 +106,7 @@ distributing it.
   Painter does not document how it stores embedded art, so check a converted brush in
   the app. `.saitdat` is reverse-engineered from Brush Bridge's notes: the file goes in
   SAI2's `custool` folder and names no pictures, so a brush comes as a round tip.
+  A `.pcbrushes` file goes in PhotoCraft's `Presets` folder; it names a computed tip,
+  so the app's brush has the converted shape rather than the original bitmap.
 - The native library is ~23 MB (it shares the Rust brush core with ProCraft), so the
   APK is ~24 MB.

@@ -1,8 +1,9 @@
 # brushconv
 
 A command-line brush converter built on ProCraft's brush engine. It reads the formats
-ProCraft itself imports and writes ProCraft, Photoshop, Krita, GIMP, Infinite Painter
-and PaintTool SAI2 brushes, so a set painted for one app can be carried to another.
+ProCraft itself imports and writes ProCraft, Photoshop, Krita, GIMP, Infinite Painter,
+PaintTool SAI2 and PhotoCraft brushes, so a set painted for one app can be carried to
+another.
 
 ```
 brushconv [OPTIONS] <INPUT>...
@@ -24,6 +25,7 @@ brushconv [OPTIONS] <INPUT>...
 | GIMP `.pat` | yes | — | read as a textured brush stamp |
 | Infinite Painter `.prbr` | yes | yes (experimental) | a zip of `properties.json`, a sample stroke and pictures |
 | PaintTool SAI2 `.saitdat` | yes | yes (experimental) | a tool's text sections: size, density, form name, scatter, wet mixing |
+| PhotoCraft `.pcbrushes` | yes | yes | a JSON group of presets: size, hardness, spacing, opacity, angle, roundness, pressure switches; a stored tip is read as its preview picture |
 
 Formats are recognised by file name first, then by their contents (PNG signature,
 ZIP entries, SQLite header, GIMP header, ABR version word), so a renamed file still
@@ -93,6 +95,19 @@ round-trips through this tool's own reader exactly for size, opacity, softness,
 angle, spacing and the pressure switches, but check it in the app before relying on
 it.
 
+**PhotoCraft `.pcbrushes`** — reads a group's JSON: each preset's name, size in canvas
+pixels, hardness, spacing, opacity, flow, angle, roundness, mirroring, the
+pressure-to-size and pressure-to-opacity switches, and a sampled or stored tip (a
+stored tip comes as its 96 px preview picture, the only part of it a group file
+holds). PhotoCraft's texture, dual brush, colour dynamics and the rest of its brush
+model stay behind. The writer emits the same group schema with every field PhotoCraft
+expects, but names a **computed round tip** instead of embedding a bitmap: a group
+keeps its sampled tips in a `tips/<hash>.pctip` folder beside the file, which a
+single-file conversion cannot carry. Convert to `.abr` to carry the bitmap. Drop the
+written file into PhotoCraft's `Presets` folder (macOS
+`~/Library/Application Support/Photocraft/Presets`) beside its `index.json`; the app
+reads every `*.pcbrushes` there on its next start, and `.abr` is the way into it.
+
 **PaintTool SAI2 `.saitdat`** — reads a custom tool's text sections: its name, size
 in canvas pixels and least size, density and least density, edge hardness, spacing,
 angle and whether the stamp follows the stroke, scatter with its count and size
@@ -139,8 +154,9 @@ Options:
 
 - `-o, --output <PATH>` — the output file, or a folder for several brushes or inputs.
 - `-t, --to <FORMAT>` — `brush`, `brushset`, `abr`, `kpp`, `bundle`, `gbr`, `prbr`,
-  `saitdat`, `json` (aliases: `procreate`, `photoshop`, `ps`, `krita`,
-  `krita-preset`, `krita-bundle`, `gimp`, `infinite-painter`, `sai`, `sai2`, `meta`).
+  `saitdat`, `pcbrushes`, `json` (aliases: `procreate`, `photoshop`, `ps`, `krita`,
+  `krita-preset`, `krita-bundle`, `gimp`, `infinite-painter`, `sai`, `sai2`,
+  `photocraft`, `meta`).
 - `-n, --name <NAME>` — the name of the written set.
 - `-l, --list` — print each brush's size range, spacing and opacity.
 - `-r, --recursive` — look inside subfolders when given a folder.
@@ -152,7 +168,7 @@ set of several brushes becomes a `.brushset` and a single brush a `.brush`. The 
 prints every file it writes and exits non-zero if any input failed.
 
 Several inputs given at once are merged into one set for the formats that hold one
-(`brushset`, `abr`, `bundle`, `json`), so `brushconv folder/ --to abr` makes a single
+(`brushset`, `abr`, `bundle`, `pcbrushes`, `json`), so `brushconv folder/ --to abr` makes a single
 `.abr` of the whole folder. The per-brush formats (`brush`, `kpp`, `gbr`, `prbr`,
 `saitdat`) write one file per brush into the output folder instead.
 
@@ -160,22 +176,22 @@ Several inputs given at once are merged into one set for the formats that hold o
 
 ProCraft's own formats are lossless. The others carry what their format can say:
 
-| Setting | `.brush`/`.brushset` | `.abr` | `.kpp`/`.bundle` | `.gbr` | `.prbr` | `.saitdat` |
-| --- | --- | --- | --- | --- | --- | --- |
-| brush tip image | yes | yes | yes | yes | yes | no (round tip; the form's BMP is named, not held) |
-| grain/texture | yes | no | yes (pattern) | no | yes (texture) | no (texture BMP is named, not held) |
-| size range | yes | no (tip size) | yes (size, min as the curve's low point) | no (tip size) | size maximum only | yes (size and least size) |
-| opacity range | yes | no | max opacity | no | max opacity | density and least density |
-| spacing | yes | percent | fraction | percent | fraction | percent |
-| pressure → size | yes, with curves | no | yes (sensor curve) | no | yes, with profile | yes (the two sizes make the curve) |
-| pressure → opacity | yes, with curves | no | yes (sensor) | no | no | yes (least density) |
-| pressure → flow | yes, with curve | no | yes (sensor) | no | yes, with profile | no |
-| scatter / size jitter | yes | no | yes (scatter, both axes) | no | yes | yes (amount, count, size jitter) |
-| mirroring | yes | no | yes | no | no | no |
-| colour jitter | yes | no | yes | no | no | yes (four channels) |
-| dual brush | yes | no | yes (masking brush) | no | no | no |
-| wet mixing | yes | no | partly | no | no | yes (water tool) |
-| thumbnail | yes | no | stroke preview | no | preview | no |
+| Setting | `.brush`/`.brushset` | `.abr` | `.kpp`/`.bundle` | `.gbr` | `.prbr` | `.saitdat` | `.pcbrushes` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| brush tip image | yes | yes | yes | yes | yes | no (round tip; the form's BMP is named, not held) | preview picture only (written as a round tip) |
+| grain/texture | yes | no | yes (pattern) | no | yes (texture) | no (texture BMP is named, not held) | no |
+| size range | yes | no (tip size) | yes (size, min as the curve's low point) | no (tip size) | size maximum only | yes (size and least size) | no (one size) |
+| opacity range | yes | no | max opacity | no | max opacity | density and least density | max opacity |
+| spacing | yes | percent | fraction | percent | fraction | percent | fraction |
+| pressure → size | yes, with curves | no | yes (sensor curve) | no | yes, with profile | yes (the two sizes make the curve) | switch only (a straight line) |
+| pressure → opacity | yes, with curves | no | yes (sensor) | no | no | yes (least density) | switch only |
+| pressure → flow | yes, with curve | no | yes (sensor) | no | yes, with profile | no | no |
+| scatter / size jitter | yes | no | yes (scatter, both axes) | no | yes | yes (amount, count, size jitter) | no |
+| mirroring | yes | no | yes | no | no | no | yes |
+| colour jitter | yes | no | yes | no | no | yes (four channels) | no |
+| dual brush | yes | no | yes (masking brush) | no | no | no | no |
+| wet mixing | yes | no | partly | no | no | yes (water tool) | no |
+| thumbnail | yes | no | stroke preview | no | preview | no | stroke preview |
 
 The ABR writer emits version 2 sampled brushes, the variant Photoshop and most other
 apps read without extra metadata; a brush's Photoshop size therefore follows its
