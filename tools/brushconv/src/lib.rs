@@ -5,6 +5,7 @@
 //! [`Brush`] model, and writes that model out as any of them.
 
 mod error;
+pub mod fields;
 mod images;
 mod md5;
 mod preview;

@@ -5,6 +5,7 @@
 
 use std::path::Path;
 
+use brushconv::fields::Field;
 use brushconv::{OutputFormat, read_bytes, write_set};
 
 uniffi::setup_scaffolding!();
@@ -42,6 +43,28 @@ pub struct Inspection {
     /// The set's own name.
     pub set_name: String,
     pub brushes: Vec<BrushInfo>,
+}
+
+/// One field of a brush, as the app's editor lists it.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct FieldInfo {
+    /// A stable name, e.g. "size".
+    pub key: String,
+    /// What to call it in the interface.
+    pub label: String,
+    /// The brush's value for it, already written for people.
+    pub value: String,
+    /// Whether the file it came from carries this field.
+    pub imported: bool,
+    /// Whether the chosen output format writes this field.
+    pub exportable: bool,
+}
+
+/// One brush's fields, for the editor.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct BrushFields {
+    pub name: String,
+    pub fields: Vec<FieldInfo>,
 }
 
 /// Why a file couldn't be read or written.
@@ -99,6 +122,33 @@ pub fn inspect(name: String, bytes: Vec<u8>) -> Result<Inspection, ConvertError>
     Ok(Inspection { format: set.source.label().to_owned(), set_name: set.name, brushes })
 }
 
+/// Every brush in a file with the fields the editor shows: which of them `target` keeps, and
+/// which ones the file itself carried.
+#[uniffi::export]
+pub fn fields(name: String, bytes: Vec<u8>, target: String) -> Result<Vec<BrushFields>, ConvertError> {
+    let output = OutputFormat::from_name(&target)
+        .ok_or_else(|| ConvertError::failed(format!("there is no format called '{target}'")))?;
+    let set = read_bytes(&bytes, &name).map_err(|error| ConvertError::failed(error.to_string()))?;
+    Ok(set
+        .brushes
+        .iter()
+        .map(|brush| BrushFields {
+            name: brush.name.clone(),
+            fields: brushconv::fields::of(brush, set.source, output).into_iter().map(field).collect(),
+        })
+        .collect())
+}
+
+fn field(field: Field) -> FieldInfo {
+    FieldInfo {
+        key: field.key.to_owned(),
+        label: field.label.to_owned(),
+        value: field.value,
+        imported: field.imported,
+        exportable: field.exportable,
+    }
+}
+
 /// Turns a brush file into `format`, writing the files into `out_dir` (which the app owns), and
 /// returns their names. One set can become several files (`.kpp`, `.gbr`, `.brush`).
 #[uniffi::export]
@@ -138,6 +188,18 @@ mod tests {
         let names: Vec<&str> = formats.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(names, ["brush", "brushset", "abr", "kpp", "bundle", "gbr", "prbr", "json"]);
         assert!(formats.iter().find(|f| f.name == "kpp").unwrap().one_per_brush);
+    }
+
+    #[test]
+    fn the_editor_marks_what_an_abr_export_drops() {
+        let brushes = fields("Inking.brushset".to_owned(), inking(), "abr".to_owned()).expect("fields");
+        assert_eq!(brushes.len(), 12);
+        assert_eq!(brushes[0].name, "Round Pen");
+        let size = brushes[0].fields.iter().find(|f| f.key == "size").expect("size");
+        assert!(size.imported, "the ProCraft set carries a size range");
+        assert!(!size.exportable, "an ABR does not");
+        let tip = brushes[0].fields.iter().find(|f| f.key == "tip").expect("tip");
+        assert!(tip.imported && tip.exportable);
     }
 
     #[test]

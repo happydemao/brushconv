@@ -162,6 +162,11 @@ is out of scope; the reader covers the material and settings columns ProCraft us
 code, through the UniFFI crate in `../brushconv-ffi`. Build it with
 `android-converter/build.sh`.
 
+The app opens a read-only brush editor after a file is read: every field the converter
+knows is listed with a green dot when the input carried it and a blue dot when the
+chosen output format writes it. The field list and the per-format read/write sets are
+in `src/fields.rs`; `fields()` in `../brushconv-ffi` hands them to the app.
+
 ## Building
 
 The tool is a member of the ProCraft Cargo workspace:
@@ -202,5 +207,5 @@ format, read the results back, and check the names and counts. Beyond that:
 - `src/write/brush.rs` — ProCraft `.brush`/`.brushset` through `engine::brushfile`.
 - `src/write/abr.rs`, `gbr.rs`, `krita.rs`, `prbr.rs`, `json.rs` — the other writers.
 
-`../brushconv-ffi` exposes `formats()`, `inspect()` and `convert()` to the Android app;
+`../brushconv-ffi` exposes `formats()`, `inspect()`, `fields()` and `convert()` to the Android app;
 `../../android-converter` is that app.

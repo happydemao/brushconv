@@ -3,7 +3,7 @@
 A small Android app that does one thing: converts brush files. There is no painting,
 no canvas, no other feature.
 
-<p align="center"><em>Pick files → pick a format → pick a folder. That's the app.</em></p>
+<p align="center"><em>Pick files → look at what came in and what an export keeps → pick a folder.</em></p>
 
 | Format | Read | Write | What it holds |
 | --- | --- | --- | --- |
@@ -26,11 +26,30 @@ size range; `.gbr` keeps only a grey tip, name and spacing; `.prbr` keeps the ti
 grain, size maximum, opacity, spacing, pressure curves, scatter and jitter, and is
 new enough to be marked experimental.
 
+## The brush editor
+
+After a file is read the app opens a brush editor instead of a plain list. Pick a
+brush at the top, pick the target format, and every field the converter knows is
+listed with two dots:
+
+- **green** — the input file carried this field;
+- **blue** — the chosen output format writes this field;
+- **grey** — neither, so it is a default or will be dropped.
+
+The header counts both (`12 会保留 9 项；这个文件带入了 11 项`), so the loss of a
+conversion is visible before a folder is picked rather than after. The values shown
+are the brush's actual ones, so a `.kpp` export showing `尺寸范围 1 – 120` really is
+what Krita will get. The editor is read-only for now: it reports, it does not edit.
+
+The field list and the per-format read/write sets live in
+`../tools/brushconv/src/fields.rs`; `../tools/brushconv-ffi` exposes them as
+`fields(name, bytes, target)`.
+
 ## How it works
 
 The conversion itself is the same Rust code as the command-line tool in
 `../tools/brushconv`. `../tools/brushconv-ffi` is a thin UniFFI library around it, so
-the app gets three Kotlin functions — `formats()`, `inspect()`, `convert()` — and the
+the app gets four Kotlin functions — `formats()`, `inspect()`, `fields()`, `convert()` — and the
 conversion code stays in one place. The native library ships for `arm64-v8a`.
 
 The app writes into the folder you pick through Android's Storage Access Framework, so

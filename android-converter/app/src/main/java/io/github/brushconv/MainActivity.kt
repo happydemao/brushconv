@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
@@ -13,43 +14,62 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import io.github.brushconv.core.BrushFields
+import io.github.brushconv.core.BrushInfo
 import io.github.brushconv.core.FormatInfo
+import io.github.brushconv.core.Inspection
 import io.github.brushconv.core.convert
+import io.github.brushconv.core.fields
 import io.github.brushconv.core.formats
 import io.github.brushconv.core.inspect
-import io.github.brushconv.core.Inspection
 import java.io.File
 import java.io.InputStream
 
 /**
- * The whole app: pick brush files, pick a format, pick a folder, convert. There is no painting
- * here, and no other feature to get in the way.
+ * The whole app: pick brush files, look at what came in and what an export keeps, then convert.
+ * There is no painting here, and no other feature to get in the way.
  */
 class MainActivity : Activity() {
-    private data class Source(val name: String, val bytes: ByteArray, val summary: String)
+    private data class Source(val name: String, val bytes: ByteArray, val summary: String, val inspection: Inspection?)
+
+    private data class EditorBrush(val source: Source, val brush: BrushInfo, val index: Int)
 
     private val sources = ArrayList<Source>()
-    private lateinit var selectedView: TextView
-    private lateinit var logView: TextView
-    private lateinit var logScroll: ScrollView
-    private lateinit var formatSpinner: Spinner
-    private lateinit var convertButton: Button
+    private lateinit var shell: FrameLayout
     private var formatList: List<FormatInfo> = emptyList()
+    private var formatIndex = 0
+    private var brushes: List<EditorBrush> = emptyList()
+    private var brushIndex = 0
     private var busy = false
+    private var statusView: TextView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        shell = FrameLayout(this)
+        setContentView(shell)
 
+        formatList = try {
+            formats()
+        } catch (error: Throwable) {
+            emptyList()
+        }
+        formatList.indexOfFirst { it.name == "brushset" }.takeIf { it >= 0 }?.let { formatIndex = it }
+        showPicker()
+    }
+
+    // ---- the picker ---------------------------------------------------------------------
+
+    private fun showPicker() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(16), dp(20), dp(12))
         }
-
         root.addView(
             TextView(this).apply {
                 text = "笔刷转换器"
@@ -65,94 +85,40 @@ class MainActivity : Activity() {
                 setPadding(0, dp(6), 0, dp(14))
             },
         )
-
         root.addView(
             Button(this).apply {
                 text = "① 选择笔刷文件"
                 setOnClickListener { pickFiles() }
             },
         )
-
-        selectedView = TextView(this).apply {
-            text = "还没有选择文件"
-            textSize = 13f
-            setTextColor(Color.DKGRAY)
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-        }
-        root.addView(
-            ScrollView(this).apply {
-                background = android.graphics.drawable.ColorDrawable(0xFFF2F2F2.toInt())
-                addView(selectedView)
-                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(120)).apply {
+        if (sources.isNotEmpty()) {
+            root.addView(
+                Button(this).apply {
+                    text = "查看画笔编辑器"
+                    setOnClickListener { showEditor() }
+                },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                     topMargin = dp(8)
-                    bottomMargin = dp(14)
-                }
-            },
-        )
-
+                },
+            )
+        }
         root.addView(
             TextView(this).apply {
-                text = "输出格式"
-                textSize = 14f
-                setTypeface(typeface, Typeface.BOLD)
+                text = if (sources.isEmpty()) {
+                    "还没有选择文件"
+                } else {
+                    sources.joinToString("\n\n") { "• ${it.name}\n   ${it.summary}" }
+                }
+                textSize = 13f
+                setTextColor(Color.DKGRAY)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
             },
-        )
-
-        formatSpinner = Spinner(this)
-        root.addView(formatSpinner)
-
-        convertButton = Button(this).apply {
-            text = "② 转换到文件夹…"
-            isEnabled = false
-            setOnClickListener { if (!busy) chooseFolder() }
-        }
-        root.addView(
-            convertButton,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(12)
+                topMargin = dp(10)
             },
         )
-
-        logView = TextView(this).apply {
-            textSize = 12f
-            setTextColor(Color.DKGRAY)
-            typeface = Typeface.MONOSPACE
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-        }
-        logScroll = ScrollView(this).apply {
-            background = android.graphics.drawable.ColorDrawable(0xFFFAFAFA.toInt())
-            addView(logView)
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f).apply {
-                topMargin = dp(14)
-            }
-        }
-        root.addView(logScroll)
-
-        setContentView(root)
-
-        formatList = try {
-            formats()
-        } catch (error: Throwable) {
-            log("✗ 转换器没有加载：${error.message}")
-            emptyList()
-        }
-        val labels = formatList.map { "${it.label}  (${it.name})" }
-        formatSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels).apply {
-            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        }
-        if (formatList.isNotEmpty()) formatSpinner.setSelection(0)
-
-        log("提示：格式说明里的“.kpp / .gbr / .brush”会为每个笔刷写一个文件，其余格式写一个文件。")
-    }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
-    private fun log(line: String) {
-        runOnUiThread {
-            if (logView.text.isNotEmpty()) logView.append("\n")
-            logView.append(line)
-            logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
-        }
+        shell.removeAllViews()
+        shell.addView(root)
     }
 
     private fun pickFiles() {
@@ -164,13 +130,283 @@ class MainActivity : Activity() {
         startActivityForResult(intent, REQUEST_PICK)
     }
 
+    private fun load(uris: List<Uri>) {
+        for (uri in uris) {
+            val name = displayName(uri)
+            try {
+                val bytes = contentResolver.openInputStream(uri).use { stream -> readFully(stream) }
+                if (bytes == null || bytes.isEmpty()) {
+                    toast("✗ $name: 文件是空的")
+                    continue
+                }
+                val inspection: Inspection? = try {
+                    inspect(name, bytes)
+                } catch (error: Throwable) {
+                    null
+                }
+                val summary = if (inspection == null) {
+                    "无法识别的笔刷格式"
+                } else {
+                    buildString {
+                        append(inspection.format)
+                        append(" · ")
+                        append(inspection.brushes.size)
+                        append(" 个笔刷")
+                        if (inspection.setName.isNotBlank()) {
+                            append(" · ")
+                            append(inspection.setName)
+                        }
+                    }
+                }
+                sources.add(Source(name, bytes, summary, inspection))
+            } catch (error: Throwable) {
+                toast("✗ $name: ${error.message ?: error.toString()}")
+            }
+        }
+        brushes = sources.flatMap { source ->
+            source.inspection?.brushes?.mapIndexed { index, brush -> EditorBrush(source, brush, index) } ?: emptyList()
+        }
+        if (brushes.isEmpty()) {
+            showPicker()
+            toast("没有读到笔刷")
+            return
+        }
+        brushIndex = 0
+        showEditor()
+    }
+
+    // ---- the brush editor ---------------------------------------------------------------
+
+    private fun showEditor() {
+        if (brushes.isEmpty()) {
+            showPicker()
+            return
+        }
+        brushIndex = brushIndex.coerceIn(0, brushes.lastIndex)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+        }
+
+        root.addView(
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(
+                    Button(this@MainActivity).apply {
+                        text = "← 返回"
+                        setOnClickListener { showPicker() }
+                    },
+                )
+                addView(
+                    TextView(this@MainActivity).apply {
+                        text = "画笔编辑器"
+                        textSize = 20f
+                        setTypeface(typeface, Typeface.BOLD)
+                        setPadding(dp(12), 0, 0, 0)
+                    },
+                )
+            },
+        )
+
+        val brushNames = brushes.mapIndexed { index, entry ->
+            if (sources.size > 1) {
+                "${index + 1}. ${entry.brush.name}  ·  ${entry.source.name}"
+            } else {
+                "${index + 1}. ${entry.brush.name}"
+            }
+        }
+        val brushSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, brushNames).apply {
+                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            setSelection(brushIndex)
+        }
+        root.addView(brushSpinner, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
+
+        root.addView(
+            TextView(this).apply {
+                text = "目标格式"
+                textSize = 14f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, dp(8), 0, dp(2))
+            },
+        )
+        val formatSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_item,
+                formatList.map { "${it.label}  (${it.name})" },
+            ).apply {
+                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            setSelection(formatIndex.coerceIn(0, formatList.lastIndex.coerceAtLeast(0)))
+        }
+        root.addView(formatSpinner)
+
+        root.addView(
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(8), 0, dp(4))
+                addView(dot(IMPORTED_COLOR))
+                addView(legend("已导入"))
+                addView(dot(EXPORTABLE_COLOR))
+                addView(legend("可导出"))
+                addView(dot(OFF_COLOR))
+                addView(legend("默认 / 不包含"))
+            },
+        )
+
+        val fieldsView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val fieldsScroll = ScrollView(this).apply {
+            addView(fieldsView)
+            background = GradientDrawable().apply { setColor(0xFFF7F7F7.toInt()); cornerRadius = dp(8).toFloat() }
+        }
+        root.addView(
+            fieldsScroll,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f).apply { topMargin = dp(4) },
+        )
+
+        val status = TextView(this).apply {
+            textSize = 12f
+            setTextColor(Color.DKGRAY)
+            setPadding(0, dp(6), 0, 0)
+        }
+        statusView = status
+        root.addView(status)
+
+        root.addView(
+            Button(this).apply {
+                text = "② 转换到文件夹…"
+                isEnabled = !busy && formatList.isNotEmpty()
+                setOnClickListener { if (!busy) chooseFolder() }
+            },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(8)
+            },
+        )
+
+        shell.removeAllViews()
+        shell.addView(root)
+
+        brushSpinner.onItemSelectedListener = SimpleItemListener { position ->
+            brushIndex = position
+            renderFields(fieldsView, status, brushSpinner.selectedItemPosition, formatSpinner.selectedItemPosition)
+        }
+        formatSpinner.onItemSelectedListener = SimpleItemListener { position ->
+            formatIndex = position
+            renderFields(fieldsView, status, brushSpinner.selectedItemPosition, position)
+        }
+        renderFields(fieldsView, status, brushIndex, formatSpinner.selectedItemPosition)
+    }
+
+    private fun renderFields(fieldsView: LinearLayout, status: TextView, brushAt: Int, formatAt: Int) {
+        fieldsView.removeAllViews()
+        val entry = brushes.getOrNull(brushAt.coerceIn(0, brushes.lastIndex)) ?: return
+        val source = entry.source
+        val brush = entry.brush
+        val format = formatList.getOrNull(formatAt.coerceIn(0, formatList.lastIndex.coerceAtLeast(0)))
+        status.text = ""
+        val report: List<BrushFields> = try {
+            fields(source.name, source.bytes, format?.name ?: "brushset")
+        } catch (error: Throwable) {
+            status.text = "读不出字段：${error.message ?: error.toString()}"
+            return
+        }
+        val reportEntry = report.getOrNull(entry.index) ?: return
+        val importedCount = reportEntry.fields.count { it.imported }
+        val exportableCount = reportEntry.fields.count { it.exportable }
+        fieldsView.addView(
+            TextView(this).apply {
+                text = "${brush.name} · 来自 ${source.name}"
+                textSize = 14f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(dp(10), dp(8), dp(10), dp(2))
+            },
+        )
+        fieldsView.addView(
+            TextView(this).apply {
+                text = "${format?.label ?: ""} 会保留 $exportableCount 项；这个文件带入了 $importedCount 项"
+                textSize = 12f
+                setTextColor(Color.DKGRAY)
+                setPadding(dp(10), 0, dp(10), dp(6))
+            },
+        )
+        for (field in reportEntry.fields) {
+            fieldsView.addView(
+                LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(10), dp(5), dp(10), dp(5))
+                    addView(if (field.imported) dot(IMPORTED_COLOR) else dot(OFF_COLOR))
+                    addView(if (field.exportable) dot(EXPORTABLE_COLOR) else dot(OFF_COLOR))
+                    addView(
+                        TextView(this@MainActivity).apply {
+                            text = labelOf(field.key, field.label)
+                            textSize = 14f
+                            setPadding(dp(8), 0, dp(8), 0)
+                            setTypeface(typeface, if (field.imported || field.exportable) Typeface.BOLD else Typeface.NORMAL)
+                        },
+                        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+                    )
+                    addView(
+                        TextView(this@MainActivity).apply {
+                            text = field.value
+                            textSize = 13f
+                            setTextColor(if (field.imported) Color.DKGRAY else Color.GRAY)
+                        },
+                    )
+                },
+            )
+        }
+    }
+
+    private fun labelOf(key: String, fallback: String): String = when (key) {
+        "name" -> "名称"
+        "tip" -> "笔尖"
+        "grain" -> "颗粒 / 纹理"
+        "spacing" -> "间距"
+        "size" -> "尺寸范围"
+        "opacity" -> "不透明度"
+        "flow" -> "流量"
+        "pressure_size" -> "压力 → 尺寸"
+        "pressure_opacity" -> "压力 → 不透明度"
+        "pressure_flow" -> "压力 → 流量"
+        "scatter" -> "散布"
+        "jitter" -> "尺寸抖动"
+        "rotation" -> "旋转角度"
+        "dual" -> "双笔刷"
+        "author" -> "作者"
+        "thumbnail" -> "缩略图"
+        else -> fallback
+    }
+
+    private fun dot(color: Int): View = View(this).apply {
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(color)
+        }
+        layoutParams = LinearLayout.LayoutParams(dp(10), dp(10)).apply { marginEnd = dp(3) }
+    }
+
+    private fun legend(text: String): TextView = TextView(this).apply {
+        this.text = text
+        textSize = 11f
+        setTextColor(Color.DKGRAY)
+        setPadding(0, 0, dp(10), 0)
+    }
+
+    // ---- conversion ---------------------------------------------------------------------
+
     private fun chooseFolder() {
         if (sources.isEmpty()) {
-            Toast.makeText(this, "先选择笔刷文件", Toast.LENGTH_SHORT).show()
+            toast("先选择笔刷文件")
             return
         }
         if (formatList.isEmpty()) {
-            Toast.makeText(this, "没有可用的输出格式", Toast.LENGTH_SHORT).show()
+            toast("没有可用的输出格式")
             return
         }
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQUEST_FOLDER)
@@ -193,70 +429,11 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun load(uris: List<Uri>) {
-        for (uri in uris) {
-            val name = displayName(uri)
-            try {
-                val bytes = contentResolver.openInputStream(uri).use { stream -> readFully(stream) }
-                if (bytes == null || bytes.isEmpty()) {
-                    log("✗ $name: 文件是空的")
-                    continue
-                }
-                val inspection: Inspection? = try {
-                    inspect(name, bytes)
-                } catch (error: Throwable) {
-                    null
-                }
-                val summary = if (inspection == null) {
-                    "无法识别的笔刷格式"
-                } else {
-                    buildString {
-                        append(inspection.format)
-                        append(" · ")
-                        append(inspection.brushes.size)
-                        append(" 个笔刷")
-                        if (inspection.setName.isNotBlank()) {
-                            append(" · ")
-                            append(inspection.setName)
-                        }
-                    }
-                }
-                sources.add(Source(name, bytes, summary))
-            } catch (error: Throwable) {
-                log("✗ $name: ${error.message ?: error.toString()}")
-            }
-        }
-        refreshSelection()
-    }
-
-    private fun readFully(stream: InputStream?): ByteArray? = stream?.use { it.readBytes() }
-
-    private fun refreshSelection() {
-        if (sources.isEmpty()) {
-            selectedView.text = "还没有选择文件"
-            convertButton.isEnabled = false
-            return
-        }
-        selectedView.text = sources.joinToString("\n\n") { "• ${it.name}\n   ${it.summary}" }
-        convertButton.isEnabled = true
-    }
-
-    private fun displayName(uri: Uri): String {
-        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (index >= 0) return cursor.getString(index)
-            }
-        }
-        return uri.lastPathSegment ?: "brush"
-    }
-
     private fun startConversion(tree: Uri) {
-        val format = formatList.getOrNull(formatSpinner.selectedItemPosition) ?: return
+        val format = formatList.getOrNull(formatIndex) ?: return
         val inputs = ArrayList(sources)
         busy = true
-        convertButton.isEnabled = false
-        log("开始转换 ${inputs.size} 个文件 → ${format.label} (${format.name})")
+        statusView?.text = "开始转换 ${inputs.size} 个文件 → ${format.label} (${format.name})"
         Thread {
             val outputs = ArrayList<Pair<String, ByteArray>>()
             val cacheRoot = File(cacheDir, "converted")
@@ -268,27 +445,25 @@ class MainActivity : Activity() {
                 try {
                     val names = convert(source.name, source.bytes, format.name, null, dir.absolutePath)
                     names.forEach { name -> outputs.add(name to File(dir, name).readBytes()) }
-                    log("✓ ${source.name} → ${names.size} 个文件")
+                    post("✓ ${source.name} → ${names.size} 个文件")
                 } catch (error: Throwable) {
-                    log("✗ ${source.name}: ${error.message ?: error.toString()}")
+                    post("✗ ${source.name}: ${error.message ?: error.toString()}")
                 }
                 dir.deleteRecursively()
             }
             cacheRoot.deleteRecursively()
             runOnUiThread {
                 if (outputs.isEmpty()) {
-                    log("没有生成任何文件")
+                    post("没有生成任何文件")
                     busy = false
-                    convertButton.isEnabled = sources.isNotEmpty()
                     return@runOnUiThread
                 }
                 Thread {
                     val written = copyInto(tree, outputs)
                     runOnUiThread {
-                        log("完成：$written 个文件已写入所选文件夹")
+                        post("完成：$written 个文件已写入所选文件夹")
                         Toast.makeText(this, "转换完成：$written 个文件", Toast.LENGTH_SHORT).show()
                         busy = false
-                        convertButton.isEnabled = sources.isNotEmpty()
                     }
                 }.start()
             }
@@ -312,7 +487,7 @@ class MainActivity : Activity() {
                 }
             }
         } catch (error: Throwable) {
-            log("! 读不到目标文件夹里的文件名：${error.message}")
+            post("! 读不到目标文件夹里的文件名：${error.message}")
         }
         var count = 0
         for ((name, bytes) in outputs) {
@@ -323,7 +498,7 @@ class MainActivity : Activity() {
                 resolver.openOutputStream(document)?.use { it.write(bytes) } ?: continue
                 count++
             } catch (error: Throwable) {
-                log("✗ 写入 $candidate 失败：${error.message}")
+                post("✗ 写入 $candidate 失败：${error.message}")
             }
         }
         return count
@@ -344,8 +519,43 @@ class MainActivity : Activity() {
         return candidate
     }
 
+    // ---- small helpers ------------------------------------------------------------------
+
+    private fun post(line: String) {
+        runOnUiThread { statusView?.append("\n$line") }
+    }
+
+    private fun toast(line: String) {
+        Toast.makeText(this, line, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun readFully(stream: InputStream?): ByteArray? = stream?.use { it.readBytes() }
+
+    private fun displayName(uri: Uri): String {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) return cursor.getString(index)
+            }
+        }
+        return uri.lastPathSegment ?: "brush"
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private class SimpleItemListener(private val action: (Int) -> Unit) : android.widget.AdapterView.OnItemSelectedListener {
+        override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+            action(position)
+        }
+
+        override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+    }
+
     companion object {
         private const val REQUEST_PICK = 1
         private const val REQUEST_FOLDER = 2
+        private const val IMPORTED_COLOR = 0xFF2E7D32.toInt()
+        private const val EXPORTABLE_COLOR = 0xFF1565C0.toInt()
+        private const val OFF_COLOR = 0xFFCfCfCf.toInt()
     }
 }
