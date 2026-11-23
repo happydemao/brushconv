@@ -461,7 +461,7 @@ class MainActivity : Activity() {
                 Thread {
                     val written = copyInto(tree, outputs)
                     runOnUiThread {
-                        post("完成：$written 个文件已写入所选文件夹")
+                        post(if (written > 0) "完成：$written 个文件已写入所选文件夹" else "没有写入任何文件")
                         Toast.makeText(this, "转换完成：$written 个文件", Toast.LENGTH_SHORT).show()
                         busy = false
                     }
@@ -472,6 +472,21 @@ class MainActivity : Activity() {
 
     private fun copyInto(tree: Uri, outputs: List<Pair<String, ByteArray>>): Int {
         val resolver = contentResolver
+        try {
+            resolver.takePersistableUriPermission(
+                tree,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        } catch (error: Throwable) {
+            // Some providers hand out a one-shot grant; the tree URI still works for this run.
+        }
+        // A tree URI names the folder's whole subtree; creating a document needs the folder's own
+        // document URI, which is what buildDocumentUriUsingTree makes.
+        val parent = try {
+            DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        } catch (error: Throwable) {
+            tree
+        }
         val taken = HashSet<String>()
         try {
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
@@ -487,22 +502,54 @@ class MainActivity : Activity() {
                 }
             }
         } catch (error: Throwable) {
-            post("! 读不到目标文件夹里的文件名：${error.message}")
+            post("! 读不到目标文件夹里的文件名：${reason(error)}")
         }
         var count = 0
+        var lastError = ""
         for ((name, bytes) in outputs) {
             val candidate = uniqueName(name, taken)
-            try {
-                val mime = if (candidate.endsWith(".json", true)) "application/json" else "application/octet-stream"
-                val document = DocumentsContract.createDocument(resolver, tree, mime, candidate) ?: continue
-                resolver.openOutputStream(document)?.use { it.write(bytes) } ?: continue
-                count++
-            } catch (error: Throwable) {
-                post("✗ 写入 $candidate 失败：${error.message}")
+            when (val outcome = writeOne(parent, tree, candidate, bytes)) {
+                null -> count++
+                else -> {
+                    lastError = outcome
+                    post("✗ 写入 $candidate 失败：$outcome")
+                }
             }
+        }
+        if (count == 0 && outputs.isNotEmpty()) {
+            post("文件夹里一个文件也没写进去。$lastError")
+            post("换个文件夹（例如“下载”）再试一次；系统自带的文件管理器给的文件夹通常可以写。")
         }
         return count
     }
+
+    /** Writes one file into the picked folder, returning an error message or `null` on success. */
+    private fun writeOne(parent: Uri, tree: Uri, name: String, bytes: ByteArray): String? {
+        val mime = if (name.endsWith(".json", true)) "application/json" else "application/octet-stream"
+        var document: Uri? = null
+        try {
+            document = DocumentsContract.createDocument(contentResolver, parent, mime, name)
+        } catch (error: Throwable) {
+            if (parent != tree) {
+                try {
+                    document = DocumentsContract.createDocument(contentResolver, tree, mime, name)
+                } catch (second: Throwable) {
+                    return reason(second)
+                }
+            } else {
+                return reason(error)
+            }
+        }
+        if (document == null) return "目标文件夹不允许创建文件"
+        try {
+            contentResolver.openOutputStream(document)?.use { it.write(bytes) } ?: return "打开输出流失败"
+        } catch (error: Throwable) {
+            return reason(error)
+        }
+        return null
+    }
+
+    private fun reason(error: Throwable): String = "${error.javaClass.simpleName}: ${error.message ?: "没有说明"}"
 
     private fun uniqueName(name: String, taken: HashSet<String>): String {
         var candidate = name
