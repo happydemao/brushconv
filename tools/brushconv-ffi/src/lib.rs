@@ -100,6 +100,7 @@ pub fn formats() -> Vec<FormatInfo> {
         OutputFormat::Bundle,
         OutputFormat::Gbr,
         OutputFormat::Prbr,
+        OutputFormat::Sai2,
         OutputFormat::Json,
     ]
     .into_iter()
@@ -198,7 +199,7 @@ mod tests {
     fn lists_every_format() {
         let formats = formats();
         let names: Vec<&str> = formats.iter().map(|f| f.name.as_str()).collect();
-        assert_eq!(names, ["brush", "brushset", "abr", "kpp", "bundle", "gbr", "prbr", "json"]);
+        assert_eq!(names, ["brush", "brushset", "abr", "kpp", "bundle", "gbr", "prbr", "saitdat", "json"]);
         assert!(formats.iter().find(|f| f.name == "kpp").unwrap().one_per_brush);
     }
 

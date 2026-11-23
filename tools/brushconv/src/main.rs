@@ -10,9 +10,10 @@ const HELP: &str = "\
 brushconv — cross-platform brush format converter
 
 Reads ProCraft .brush/.brushset/.brushlibrary, Photoshop .abr, Krita .kpp/.bundle,
-GIMP .gbr/.gih/.vbr, Clip Studio .sut/.sutg and Infinite Painter .prbr, and writes
-ProCraft, Photoshop, Krita, GIMP or Infinite Painter brushes (Clip Studio .sut is
-read-only, and Infinite Painter's .prbr is new: check it in the app before relying on it).
+GIMP .gbr/.gih/.vbr, Clip Studio .sut/.sutg, Infinite Painter .prbr and PaintTool
+SAI2 .saitdat, and writes ProCraft, Photoshop, Krita, GIMP, Infinite Painter or SAI2
+brushes (Clip Studio .sut is read-only; Infinite Painter's .prbr and SAI2's .saitdat
+are new: check them in the app before relying on them).
 
 USAGE:
     brushconv [OPTIONS] <INPUT>...
@@ -22,7 +23,7 @@ ARGS:
 
 OPTIONS:
     -o, --output <PATH>    Output file, or folder for several brushes/inputs
-    -t, --to <FORMAT>      brush | brushset | abr | kpp | bundle | gbr | prbr | json
+    -t, --to <FORMAT>      brush | brushset | abr | kpp | bundle | gbr | prbr | saitdat | json
     -n, --name <NAME>      Name the output set (default: the input's name)
     -l, --list             List the brushes and their settings, writing nothing
     -r, --recursive        Look in folders' subfolders too
@@ -283,7 +284,7 @@ fn looks_like_file(path: &Path) -> bool {
 }
 
 fn is_brush_file(path: &Path) -> bool {
-    const EXTENSIONS: [&str; 13] = [
+    const EXTENSIONS: [&str; 14] = [
         "brush",
         "brushset",
         "brushlibrary",
@@ -296,6 +297,7 @@ fn is_brush_file(path: &Path) -> bool {
         "sut",
         "sutg",
         "prbr",
+        "saitdat",
         "pat",
     ];
     path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).is_some_and(|e| EXTENSIONS.contains(&e.as_str()))

@@ -16,6 +16,7 @@ no canvas, no other feature.
 | GIMP `.gbr` | yes | yes | a grey tip with name and spacing |
 | GIMP `.pat` | yes | — | read as a textured stamp |
 | Infinite Painter `.prbr` | yes | yes (experimental) | `properties.json`, a sample stroke and pictures |
+| PaintTool SAI2 `.saitdat` | yes | yes (experimental) | a tool's text sections: size, density, scatter, wet mixing |
 | JSON | — | yes | every setting, for scripts |
 
 A format's fidelity is the same as the CLI's: the full per-format list of what can
@@ -24,8 +25,10 @@ own files keep everything; `.abr` keeps the tip, name and spacing but no ranges,
 grain or curves; `.kpp` keeps the tip, grain, size, spacing, softness, ratio, pressure
 curves, scatter, mirroring, colour jitter and a dual brush (as a masking brush);
 `.gbr` keeps only a grey tip, name and spacing; `.prbr` keeps the tip,
-grain, size maximum, opacity, spacing, pressure curves, scatter and jitter, and is
-new enough to be marked experimental.
+grain, size maximum, opacity, spacing, pressure curves, scatter and jitter;
+`.saitdat` keeps the size and least size, density, hardness, spacing, angle, scatter,
+jitter and wet mixing but not the form and texture pictures (SAI2 keeps those beside
+the tool). Both are new enough to be marked experimental.
 
 ## The brush editor
 
@@ -96,6 +99,7 @@ distributing it.
 - The formats the CLI can only read (`.sut`, `.sutg`, `.gih`, `.vbr`, `.pat`,
   `.brushlibrary`) are input only. `.prbr` is written on a best-effort basis: Infinite
   Painter does not document how it stores embedded art, so check a converted brush in
-  the app.
+  the app. `.saitdat` is reverse-engineered from Brush Bridge's notes: the file goes in
+  SAI2's `custool` folder and names no pictures, so a brush comes as a round tip.
 - The native library is ~23 MB (it shares the Rust brush core with ProCraft), so the
   APK is ~24 MB.

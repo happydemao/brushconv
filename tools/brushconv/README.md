@@ -1,8 +1,8 @@
 # brushconv
 
 A command-line brush converter built on ProCraft's brush engine. It reads the formats
-ProCraft itself imports and writes ProCraft, Photoshop, Krita and GIMP brushes, so a
-set painted for one app can be carried to another.
+ProCraft itself imports and writes ProCraft, Photoshop, Krita, GIMP, Infinite Painter
+and PaintTool SAI2 brushes, so a set painted for one app can be carried to another.
 
 ```
 brushconv [OPTIONS] <INPUT>...
@@ -23,6 +23,7 @@ brushconv [OPTIONS] <INPUT>...
 | GIMP `.gbr` | yes | yes | a grey brush tip with the GIMP v2 header |
 | GIMP `.pat` | yes | — | read as a textured brush stamp |
 | Infinite Painter `.prbr` | yes | yes (experimental) | a zip of `properties.json`, a sample stroke and pictures |
+| PaintTool SAI2 `.saitdat` | yes | yes (experimental) | a tool's text sections: size, density, form name, scatter, wet mixing |
 
 Formats are recognised by file name first, then by their contents (PNG signature,
 ZIP entries, SQLite header, GIMP header, ABR version word), so a renamed file still
@@ -92,6 +93,23 @@ round-trips through this tool's own reader exactly for size, opacity, softness,
 angle, spacing and the pressure switches, but check it in the app before relying on
 it.
 
+**PaintTool SAI2 `.saitdat`** — reads a custom tool's text sections: its name, size
+in canvas pixels and least size, density and least density, edge hardness, spacing,
+angle and whether the stamp follows the stroke, scatter with its count and size
+jitter, colour jitter, the brush form's and texture's BMP names, and the water tool's
+mixing (how much colour it picks up, its water content, how far its colour
+stretches). SAI2 keeps the pictures a tool names (blotmap, brshape and scatter BMPs,
+brushtex and papertex) beside the tool in its own settings folder, so a tool read on
+its own comes as a round tip at the form's hardness and its texture is left behind.
+The writer emits a tool in SAI2's own key order with no form or texture named (SAI2
+falls back to its round one) and keeps size, least size, density, hardness, spacing,
+angle, follow-the-stroke, scatter, jitter and the wet mixing; drop the file into
+`Documents\SYSTEMAX Software Development\SAIv2\settings\custool\nrm\` and add it
+to a tool group. Writing is **experimental**: SAI2 documents nothing (the layout here
+comes from Brush Bridge's reverse-engineering, MIT), selection tools and SAI2's speed
+and dynamics extras are not modelled, and no real SAI2 install was available to open
+the result.
+
 ## Usage
 
 ```sh
@@ -120,9 +138,9 @@ brushconv Inking.brushset --to json -o inking.json
 Options:
 
 - `-o, --output <PATH>` — the output file, or a folder for several brushes or inputs.
-- `-t, --to <FORMAT>` — `brush`, `brushset`, `abr`, `kpp`, `bundle`, `gbr`, `json`
-  (aliases: `procreate`, `photoshop`, `ps`, `krita`, `krita-preset`, `krita-bundle`,
-  `gimp`, `meta`).
+- `-t, --to <FORMAT>` — `brush`, `brushset`, `abr`, `kpp`, `bundle`, `gbr`, `prbr`,
+  `saitdat`, `json` (aliases: `procreate`, `photoshop`, `ps`, `krita`,
+  `krita-preset`, `krita-bundle`, `gimp`, `infinite-painter`, `sai`, `sai2`, `meta`).
 - `-n, --name <NAME>` — the name of the written set.
 - `-l, --list` — print each brush's size range, spacing and opacity.
 - `-r, --recursive` — look inside subfolders when given a folder.
@@ -135,28 +153,29 @@ prints every file it writes and exits non-zero if any input failed.
 
 Several inputs given at once are merged into one set for the formats that hold one
 (`brushset`, `abr`, `bundle`, `json`), so `brushconv folder/ --to abr` makes a single
-`.abr` of the whole folder. The per-brush formats (`brush`, `kpp`, `gbr`) write one
-file per brush into the output folder instead.
+`.abr` of the whole folder. The per-brush formats (`brush`, `kpp`, `gbr`, `prbr`,
+`saitdat`) write one file per brush into the output folder instead.
 
 ## What survives a conversion
 
 ProCraft's own formats are lossless. The others carry what their format can say:
 
-| Setting | `.brush`/`.brushset` | `.abr` | `.kpp`/`.bundle` | `.gbr` | `.prbr` |
-| --- | --- | --- | --- | --- | --- |
-| brush tip image | yes | yes | yes | yes | yes |
-| grain/texture | yes | no | yes (pattern) | no | yes (texture) |
-| size range | yes | no (tip size) | yes (size, min as the curve's low point) | no (tip size) | size maximum only |
-| opacity range | yes | no | max opacity | no | max opacity |
-| spacing | yes | percent | fraction | percent | fraction |
-| pressure → size | yes, with curves | no | yes (sensor curve) | no | yes, with profile |
-| pressure → opacity | yes, with curves | no | yes (sensor) | no | no |
-| pressure → flow | yes, with curve | no | yes (sensor) | no | yes, with profile |
-| scatter / size jitter | yes | no | yes (scatter, both axes) | no | yes |
-| mirroring | yes | no | yes | no | no |
-| colour jitter | yes | no | yes | no | no |
-| dual brush | yes | no | yes (masking brush) | no | no |
-| thumbnail | yes | no | stroke preview | no | preview |
+| Setting | `.brush`/`.brushset` | `.abr` | `.kpp`/`.bundle` | `.gbr` | `.prbr` | `.saitdat` |
+| --- | --- | --- | --- | --- | --- | --- |
+| brush tip image | yes | yes | yes | yes | yes | no (round tip; the form's BMP is named, not held) |
+| grain/texture | yes | no | yes (pattern) | no | yes (texture) | no (texture BMP is named, not held) |
+| size range | yes | no (tip size) | yes (size, min as the curve's low point) | no (tip size) | size maximum only | yes (size and least size) |
+| opacity range | yes | no | max opacity | no | max opacity | density and least density |
+| spacing | yes | percent | fraction | percent | fraction | percent |
+| pressure → size | yes, with curves | no | yes (sensor curve) | no | yes, with profile | yes (the two sizes make the curve) |
+| pressure → opacity | yes, with curves | no | yes (sensor) | no | no | yes (least density) |
+| pressure → flow | yes, with curve | no | yes (sensor) | no | yes, with profile | no |
+| scatter / size jitter | yes | no | yes (scatter, both axes) | no | yes | yes (amount, count, size jitter) |
+| mirroring | yes | no | yes | no | no | no |
+| colour jitter | yes | no | yes | no | no | yes (four channels) |
+| dual brush | yes | no | yes (masking brush) | no | no | no |
+| wet mixing | yes | no | partly | no | no | yes (water tool) |
+| thumbnail | yes | no | stroke preview | no | preview | no |
 
 The ABR writer emits version 2 sampled brushes, the variant Photoshop and most other
 apps read without extra metadata; a brush's Photoshop size therefore follows its
@@ -165,6 +184,18 @@ absolute size in pixels (ProCraft's size is canvas pixels too), and the pressure
 curve's low point carries the size range's low end. `.sut` is import-only because
 writing Clip Studio's SQLite library is out of scope; the reader covers the material
 and settings columns ProCraft uses.
+
+## How this compares to Brush Bridge
+
+[Brush Bridge](https://github.com/CanderFlower/brush-bridge) (MIT) is the other project
+that reads and writes SAI2 tools and is where the `.saitdat` layout here comes from.
+It is a Windows-only Python GUI that also detects installed apps and installs brushes
+into them. This tool is a native Rust binary with no runtime to install, it also runs
+as an Android app that converts brushes on the phone itself (no desktop at all), and
+its file-name conversion is scriptable (`--to`, `-o`, `--list`, recursive folders) with
+a JSON dump for pipelines. What Brush Bridge has that this does not yet: installing
+into a running app's settings folder, SAI2 brush materials (BMP assets), and the
+older SAI 1 material formats.
 
 ## The Android app
 

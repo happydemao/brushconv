@@ -73,6 +73,7 @@ fn one_brush_round_trips_through_the_one_brush_formats() {
         (OutputFormat::Kpp, "Round Pen.kpp"),
         (OutputFormat::Gbr, "Round Pen.gbr"),
         (OutputFormat::Prbr, "Round Pen.prbr"),
+        (OutputFormat::Sai2, "Round Pen.saitdat"),
     ] {
         let single = brushconv::BrushSet {
             name: brush.name.clone(),
@@ -104,4 +105,37 @@ fn every_legacy_set_converts() {
         }
     }
     assert!(count > 20, "there are {count} legacy sets");
+}
+
+/// A SAI2 custom tool's readings, and its conversion into the formats that carry them.
+#[test]
+fn a_sai2_tool_becomes_a_brush() {
+    let tool = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/Water soft.saitdat");
+    let set = read_path(&tool).expect("read the SAI2 tool");
+    assert_eq!(set.brushes.len(), 1);
+    let brush = &set.brushes[0];
+    assert_eq!(brush.name, "Water soft");
+    assert_eq!(set.source, brushconv::SourceFormat::Sai2);
+    // 200 px across, never below 30% of that
+    assert!((brush.max_size - 200.0).abs() < 0.5, "max {}", brush.max_size);
+    assert!((brush.min_size - 60.0).abs() < 0.5, "min {}", brush.min_size);
+    // density 80%, least density 20%
+    assert!((brush.max_opacity - 0.8).abs() < 1e-6);
+    assert!((brush.min_opacity - 0.2).abs() < 1e-6);
+    // wavno 1 of 4
+    assert!((brush.hardness - 0.25).abs() < 1e-6);
+    // water 40%, mixing 50%, colour stretch 25%
+    assert!((brush.setting("wet_dilution") - 0.4).abs() < 1e-6);
+    assert!((brush.setting("wet_pull") - 0.5).abs() < 1e-6);
+    assert!((brush.setting("wet_charge") - 0.25).abs() < 1e-6);
+    assert!(brush.mixes_wet());
+    assert!(brush.pressure_size > 0.0 && brush.pressure_opacity > 0.0);
+
+    let scratch = Scratch::new("sai");
+    let out = scratch.path("Water soft.kpp");
+    let set = read_path(&tool).expect("read again");
+    write_set(&set, brushconv::OutputFormat::Kpp, Some(&out), None).expect("write kpp");
+    assert!(out.is_file());
+    let back = read_path(&out).expect("read back");
+    assert!((back.brushes[0].max_size - 200.0).abs() < 0.5);
 }

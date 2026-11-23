@@ -125,7 +125,8 @@ impl CanvasSession {
 
 /// Other apps' brush files, by the endings of their names: Photoshop's, GIMP's brushes, pipes and
 /// generated brushes, Krita's presets and bundles, Clip Studio's sub tools.
-pub const OTHER_BRUSH_EXTENSIONS: [&str; 9] = ["abr", "gbr", "gih", "vbr", "kpp", "bundle", "sut", "sutg", "prbr"];
+pub const OTHER_BRUSH_EXTENSIONS: [&str; 10] =
+    ["abr", "gbr", "gih", "vbr", "kpp", "bundle", "sut", "sutg", "prbr", "saitdat"];
 
 /// Whether `bytes` are a zip holding brushes (a brush's archive, or a set's list), whatever the
 /// file is called: a brush or set file sent on as a plain zip.
@@ -856,6 +857,9 @@ fn other_brushes(bytes: &[u8], name: String) -> Option<(String, Vec<Brush>)> {
     if let Some(p) = procraft_engine::prbr::read(bytes) {
         return Some((name, vec![prbr_brush(&p)]));
     }
+    if let Some(t) = procraft_engine::sai::read(bytes) {
+        return Some((name, vec![sai_brush(&t)]));
+    }
     // a preset alone has only the pictures it holds itself (newer ones do): one it only names (one
     // that came with Krita) comes round
     let preset = krita::read_preset(bytes, &|_| None)?;
@@ -994,6 +998,79 @@ fn prbr_brush(p: &procraft_engine::prbr::PrbrBrush) -> Brush {
     // the sample stroke the app shows, as the brush's preview
     if let Some(preview) = &p.preview_png {
         b.thumbnail = Some(preview.as_slice().into());
+    }
+    b
+}
+
+/// A brush of a PaintTool SAI2 custom tool (`.saitdat`): its size, density, edge, spacing, angle,
+/// scatter, colour jitter and its wet mixing. The pictures a tool names — its brush form and its
+/// texture — live beside it in the SAI2 settings folder, so a tool read on its own comes with a
+/// round tip at the form's hardness, and those two stay behind.
+///
+/// SAI2's mixing maps onto the wet brush: its water content is the dilution, how much it mixes
+/// with what is under it is the pull, and how far its colour stretches is the charge.
+fn sai_brush(t: &procraft_engine::sai::SaiTool) -> Brush {
+    let mut b = Brush { name: t.name.clone(), ..Brush::round_pen() };
+    b.hardness = t.hardness;
+    if let Some(spacing) = t.spacing {
+        b.spacing = Brush::spacing_within_reach(spacing);
+    }
+    // SAI2's size is in canvas pixels, as the studio's own sizes are (a Krita preset's too)
+    if let Some(px) = t.size {
+        let most = px.max(0.5).min(b.most_size() * b.size_unit());
+        b.max_size = most;
+        b.min_size = (px * t.min_size).clamp(0.5, most);
+    }
+    b.max_opacity = t.density.clamp(0.0, 1.0);
+    b.min_opacity = t.min_density.clamp(0.0, b.max_opacity);
+    if t.pressure_size {
+        b.pressure_size = 1.0;
+        b.size_curve = Curve::new(&[
+            procraft_engine::geom::Vec2::new(0.0, t.min_size),
+            procraft_engine::geom::Vec2::new(1.0, 1.0),
+        ]);
+    }
+    if t.pressure_density {
+        b.pressure_opacity = 1.0;
+        b.opacity_curve = Curve::new(&[
+            procraft_engine::geom::Vec2::new(0.0, t.min_density),
+            procraft_engine::geom::Vec2::new(1.0, 1.0),
+        ]);
+    }
+    if t.dilution > 0.0 {
+        b.set_setting("wet_dilution", t.dilution);
+        // a dry brush with the tool's colour mixing becomes a wet one that pulls from the canvas
+        if t.blend > 0.0 {
+            b.set_setting("wet_pull", t.blend);
+        }
+        if t.persist > 0.0 {
+            b.set_setting("wet_charge", t.persist);
+        }
+    }
+    if t.angle != 0.0 {
+        b.shape.rotation = t.angle.to_radians().rem_euclid(std::f32::consts::TAU);
+    }
+    if t.angle_follow {
+        b.shape.follow = 1.0;
+    }
+    if t.roundness < 1.0 {
+        b.shape.roundness = t.roundness.clamp(procraft_engine::stroke::LEAST_ROUNDNESS, 1.0);
+    }
+    if t.scatter > 0.0 {
+        b.set_setting("scatter", t.scatter);
+    }
+    if t.count > 1.0 {
+        b.shape.count = (t.count.round() as u32).clamp(1, 16);
+    }
+    if t.size_jitter > 0.0 {
+        b.set_setting("jitter_size", t.size_jitter);
+    }
+    for (share, key) in
+        t.colour_jitter.iter().zip(["stamp_hue", "stamp_saturation", "stamp_lightness", "jitter_opacity"])
+    {
+        if *share > 0.0 {
+            b.set_setting(key, *share);
+        }
     }
     b
 }

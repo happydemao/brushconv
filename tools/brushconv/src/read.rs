@@ -33,6 +33,8 @@ pub enum SourceFormat {
     CspGroup,
     /// Infinite Painter's `.prbr`.
     Prbr,
+    /// PaintTool SAI2's custom tool, `.saitdat`.
+    Sai2,
     /// Recognised by its contents but not its name.
     Unknown,
 }
@@ -52,6 +54,7 @@ impl SourceFormat {
             SourceFormat::Csp => "Clip Studio sub tool",
             SourceFormat::CspGroup => "Clip Studio sub tool group",
             SourceFormat::Prbr => "Infinite Painter brush",
+            SourceFormat::Sai2 => "PaintTool SAI2 tool",
             SourceFormat::Unknown => "brush file",
         }
     }
@@ -85,6 +88,7 @@ pub fn detect_format(bytes: &[u8], file_name: &str) -> SourceFormat {
         "sut" => Some(SourceFormat::Csp),
         "sutg" => Some(SourceFormat::CspGroup),
         "prbr" => Some(SourceFormat::Prbr),
+        "saitdat" => Some(SourceFormat::Sai2),
         _ => None,
     };
     if let Some(format) = by_name {
@@ -119,6 +123,9 @@ fn sniff(bytes: &[u8]) -> SourceFormat {
     if bytes.starts_with(b"SQLite format 3\0") {
         return SourceFormat::Csp;
     }
+    if looks_like_sai2(bytes) {
+        return SourceFormat::Sai2;
+    }
     if looks_like_gbr(bytes) {
         return SourceFormat::Gbr;
     }
@@ -126,6 +133,13 @@ fn sniff(bytes: &[u8]) -> SourceFormat {
         return SourceFormat::Abr;
     }
     SourceFormat::Unknown
+}
+
+/// A SAI2 custom tool is text with a `tidstr=` header and a `--EOF--` end.
+fn looks_like_sai2(bytes: &[u8]) -> bool {
+    let head = bytes.get(..4096).unwrap_or(bytes);
+    let text = String::from_utf8_lossy(head);
+    text.contains("tidstr=") && (text.contains("--EOF--") || text.contains("tfmode="))
 }
 
 fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
@@ -168,7 +182,7 @@ pub fn read_bytes(bytes: &[u8], file_name: &str) -> Result<BrushSet> {
     let read = procraft_core::read_any_brushes(bytes, Some(file_name.to_owned())).ok_or_else(|| {
         Error::new(format!(
             "could not read {file_name} as a brush file ({}). Supported: .brush, .brushset, \
-             .brushlibrary, .abr, .kpp, .bundle, .gbr, .gih, .vbr, .sut, .sutg, .prbr",
+             .brushlibrary, .abr, .kpp, .bundle, .gbr, .gih, .vbr, .sut, .sutg, .prbr, .saitdat",
             source.label()
         ))
     })?;
@@ -215,6 +229,14 @@ mod tests {
         assert_eq!(detect_format(b"", "a.sutg"), SourceFormat::CspGroup);
         assert_eq!(detect_format(b"", "a.kpp"), SourceFormat::Krita);
         assert_eq!(detect_format(b"", "infinite painter.prbr"), SourceFormat::Prbr);
+        assert_eq!(detect_format(b"", "Brush.SAITDAT"), SourceFormat::Sai2);
+    }
+
+    #[test]
+    fn sniffs_a_sai2_tool_by_its_text() {
+        let tool = b"tidstr=S:brush\nname=U:Soft\n.\nmodstr=I:1\n.\n--EOF--\n";
+        assert_eq!(detect_format(tool, "no-name"), SourceFormat::Sai2);
+        assert_eq!(detect_format(b"just a text file", "no-name"), SourceFormat::Unknown);
     }
 
     #[test]
