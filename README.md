@@ -9,6 +9,8 @@
   Pressure-sensitive brushes, layers with blend modes, adjustments, selection and transform, animation and 3D painting, written from scratch.
 </p>
 
+> **This repository is a derivative of ProCraft (MIT OR Apache-2.0), built to carry a cross-platform brush format converter.** The painting app, the engine and their history are kept as they are; added on top are the [`tools/brushconv`](tools/brushconv) command-line converter, its [`tools/brushconv-ffi`](tools/brushconv-ffi) bindings, a conversion-only Android app in [`android-converter`](android-converter), and readers/writers for ProCraft `.brush`/`.brushset`, Photoshop `.abr`, Krita `.kpp`/`.bundle`, GIMP `.gbr`, Infinite Painter `.prbr` and PaintTool SAI2 `.saitdat`. See [NOTICE](NOTICE) for the upstream attribution.
+
 <p align="center">
   <a href="https://github.com/artcraft-android/procraft/releases"><img src="https://raw.githubusercontent.com/Kunzisoft/Github-badge/main/get-it-on-github.png" alt="Get it on GitHub" height="60"></a>
   <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/artcraft-android/procraft"><img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="60"></a>

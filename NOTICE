@@ -1,3 +1,20 @@
+This repository
+================
+
+This repository is a derivative of ProCraft (the NOTICE below), kept to carry
+a cross-platform brush format converter. Its additions are:
+
+  tools/brushconv          the command-line brush format converter
+  tools/brushconv-ffi      its UniFFI bindings, used by the Android app
+  android-converter        a standalone, conversion-only Android app
+  crates/engine/src/prbr.rs   Infinite Painter `.prbr` reader
+  crates/engine/src/sai.rs    PaintTool SAI2 `.saitdat` reader
+  crates/engine/src/krita.rs  Krita preset reading fixes
+
+They are licensed under the same MIT OR Apache-2.0 terms as ProCraft. The brush
+formats the converter names belong to their applications; only their files are
+read and written here.
+
 ProCraft
 Copyright (c) 2026 ArtCraft Team and the ProCraft contributors.
 Licensed under the MIT License or the Apache License, Version 2.0, at your option
