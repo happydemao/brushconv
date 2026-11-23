@@ -64,9 +64,21 @@ fn reads(format: SourceFormat) -> &'static [&'static str] {
         ProCraft | ProCraftSet | ProCraftLibrary => &ALL,
         Abr => &["name", "tip", "spacing", "scatter", "rotation", "dual"],
         Gih | Vbr | Gbr => &["tip"],
-        Krita | KritaBundle => {
-            &["name", "tip", "grain", "spacing", "opacity", "flow", "pressure_size", "pressure_opacity"]
-        }
+        Krita | KritaBundle => &[
+            "name",
+            "tip",
+            "grain",
+            "spacing",
+            "size",
+            "opacity",
+            "flow",
+            "pressure_size",
+            "pressure_opacity",
+            "pressure_flow",
+            "scatter",
+            "rotation",
+            "dual",
+        ],
         Csp | CspGroup => &["name", "tip", "grain", "spacing", "opacity", "flow", "pressure_size", "dual"],
         Prbr => &[
             "name",
@@ -92,7 +104,21 @@ fn writes(format: OutputFormat) -> &'static [&'static str] {
     match format {
         Brush | BrushSet => &ALL,
         Abr => &["name", "tip", "spacing"],
-        Kpp | Bundle => &["name", "tip", "grain", "spacing", "opacity", "flow", "pressure_size", "pressure_flow"],
+        Kpp | Bundle => &[
+            "name",
+            "tip",
+            "grain",
+            "spacing",
+            "size",
+            "opacity",
+            "flow",
+            "pressure_size",
+            "pressure_opacity",
+            "pressure_flow",
+            "scatter",
+            "rotation",
+            "dual",
+        ],
         Gbr => &["name", "tip", "spacing"],
         Prbr => &[
             "name",

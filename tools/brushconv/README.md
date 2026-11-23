@@ -56,13 +56,18 @@ schema is out of scope, so `.sut` never appears as an output format.
 
 **Krita `.kpp` / `.bundle`** — reads a preset's XML parameters and the pictures in
 its `<resources>`: the tip (a drawn `auto_brush` or an embedded PNG/`.gbr` image),
-spacing, angle, opacity, flow, the pressure size/opacity switches and sensor curves,
-texture and pattern, and the paint-op (build-up or wash) mode. The writer stores the
-tip as an embedded PNG resource, draws a 1060×324 stroke preview into the `.kpp`'s
-own image, and writes the settings ProCraft models: spacing, angle, opacity, flow,
-pressure-to-size and pressure-to-flow curves, grain as a pattern resource. Krita has
-no notion of ProCraft's size range, so presets open at Krita's 1–120 px default; the
-dual brush and the author pictures have no Krita equivalent and are not written.
+size (`SizeValue`), softness, ratio, spacing, angle, opacity, flow, the pressure
+switches and sensor curves (`UseCurve` false means a straight pen response, not that
+the option is off), scatter and its axes, mirroring, colour jitter, texture and
+pattern, the masking brush as a dual brush, and the paint-op (build-up or wash) mode.
+The writer stores the tip as an embedded PNG resource, draws a 1060×324 stroke preview
+into the `.kpp`'s own image, writes a 200×200 `preview.png` into the bundle, and keeps
+the size (`SizeValue` plus `diameter`, with the pressure curve from the size range),
+softness, ratio, spacing, angle, opacity, flow, pressure-to-opacity/flow curves, flow
+pressure, grain as a pattern resource, scatter and its axes, mirroring, colour jitter,
+and a dual brush as a masking brush (composite op from its blend mode, its own size
+share and settings). The author pictures have no Krita equivalent and are not
+written.
 
 **GIMP `.gbr`** — reads a grey tip, its name and spacing; `.gih` ranked tips and
 `.vbr` parametric brushes become tips too, and `.pat` becomes a stamp. The writer
@@ -141,22 +146,25 @@ ProCraft's own formats are lossless. The others carry what their format can say:
 | --- | --- | --- | --- | --- | --- |
 | brush tip image | yes | yes | yes | yes | yes |
 | grain/texture | yes | no | yes (pattern) | no | yes (texture) |
-| size range | yes | no (tip size) | no (Krita default) | no (tip size) | size maximum only |
+| size range | yes | no (tip size) | yes (size, min as the curve's low point) | no (tip size) | size maximum only |
 | opacity range | yes | no | max opacity | no | max opacity |
 | spacing | yes | percent | fraction | percent | fraction |
 | pressure → size | yes, with curves | no | yes (sensor curve) | no | yes, with profile |
 | pressure → opacity | yes, with curves | no | yes (sensor) | no | no |
-| pressure → flow | yes, with curve | no | no | no | yes, with profile |
-| scatter / size jitter | yes | no | no | no | yes |
-| dual brush | yes | no | no | no | no |
+| pressure → flow | yes, with curve | no | yes (sensor) | no | yes, with profile |
+| scatter / size jitter | yes | no | yes (scatter, both axes) | no | yes |
+| mirroring | yes | no | yes | no | no |
+| colour jitter | yes | no | yes | no | no |
+| dual brush | yes | no | yes (masking brush) | no | no |
 | thumbnail | yes | no | stroke preview | no | preview |
 
 The ABR writer emits version 2 sampled brushes, the variant Photoshop and most other
 apps read without extra metadata; a brush's Photoshop size therefore follows its
-embedded tip, and the size slider extremes are not carried. Krita presets encode the
-ProCraft size range only as the pressure curve, so Krita opens them at its usual
-1–120 px default. `.sut` is import-only because writing Clip Studio's SQLite library
-is out of scope; the reader covers the material and settings columns ProCraft uses.
+embedded tip, and the size slider extremes are not carried. Krita presets keep the
+absolute size in pixels (ProCraft's size is canvas pixels too), and the pressure
+curve's low point carries the size range's low end. `.sut` is import-only because
+writing Clip Studio's SQLite library is out of scope; the reader covers the material
+and settings columns ProCraft uses.
 
 ## The Android app
 
@@ -193,7 +201,9 @@ The tests convert `legacy-brushes/` (21 real ProCraft sets) to ABR and every pre
 format, read the results back, and check the names and counts. Beyond that:
 
 - Krita 5's own preset loader renders the written `.kpp` (checked through the macOS
-  QuickLook thumbnailer, which uses Krita's resource code).
+  QuickLook thumbnailer, which uses Krita's resource code), including the richer
+  preset built from Krita's own `2.bundle` test file (size 144 px, softness 0.64,
+  ratio 0.83, scatter, mirroring, colour jitter, masking brush).
 - Every Krita bundle is unpacked and its `manifest.xml` md5 sums are checked against
   the actual entries.
 - ABR output round-trips through ProCraft's Photoshop reader; it has not yet been

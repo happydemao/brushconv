@@ -21,8 +21,9 @@ no canvas, no other feature.
 A format's fidelity is the same as the CLI's: the full per-format list of what can
 be imported and exported is in `../tools/brushconv/README.md`. In short, ProCraft's
 own files keep everything; `.abr` keeps the tip, name and spacing but no ranges,
-grain or curves; `.kpp` keeps the tip, grain, spacing and pressure curves but not the
-size range; `.gbr` keeps only a grey tip, name and spacing; `.prbr` keeps the tip,
+grain or curves; `.kpp` keeps the tip, grain, size, spacing, softness, ratio, pressure
+curves, scatter, mirroring, colour jitter and a dual brush (as a masking brush);
+`.gbr` keeps only a grey tip, name and spacing; `.prbr` keeps the tip,
 grain, size maximum, opacity, spacing, pressure curves, scatter and jitter, and is
 new enough to be marked experimental.
 
@@ -38,7 +39,7 @@ listed with two dots:
 
 The header counts both (`12 会保留 9 项；这个文件带入了 11 项`), so the loss of a
 conversion is visible before a folder is picked rather than after. The values shown
-are the brush's actual ones, so a `.kpp` export showing `尺寸范围 1 – 120` really is
+are the brush's actual ones, so a `.kpp` export showing `尺寸范围 3 – 144` really is
 what Krita will get. The editor is read-only for now: it reports, it does not edit.
 
 The field list and the per-format read/write sets live in

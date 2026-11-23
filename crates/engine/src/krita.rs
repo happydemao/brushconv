@@ -19,6 +19,13 @@ use crate::zip::ZipReader;
 #[derive(Clone, Debug, PartialEq)]
 pub struct KritaBrush {
     pub name: String,
+    /// Its size in pixels, as Krita keeps it (`SizeValue`, a thousandth of a pixel each), or its
+    /// older `diameter`, or the side of the tip it draws.
+    pub size: Option<f32>,
+    /// How soft its edge is (0 a hard edge, 1 all soft), as Krita's Softness control takes it.
+    pub softness: f32,
+    /// How far its tip is flattened across (1 round), as Krita's Ratio takes it.
+    pub ratio: f32,
     pub tip: KritaTip,
     /// Space between stamps as a share of the size: the preset's own, or its automatic spacing at
     /// the size it keeps (see [`auto_spacing`]); scaled by its Spacing option if that follows the
@@ -350,10 +357,17 @@ fn brush_of<'p>(
         && (number(brush, "density").is_some_and(|d| d < 1.0) || number(brush, "randomness").is_some_and(|r| r > 0.0));
     let flag = |name: &str| param(name).is_some_and(|v| v == "true");
     let value = |name: &str| param(name).and_then(real);
-    // an option switched on with its pen settings, and driven by a sensor
-    let on = |option: &str| flag(&format!("Pressure{option}")) && param(&format!("{option}UseCurve")) != Some("false");
+    // an option its pen settings switch on (a curve of its own or not, the pen drives it)
+    let on = |option: &str| flag(&format!("Pressure{option}"));
     let driven = |option: &str, id: &str| on(option) && sensors_of(param, option).contains(&id);
     let turned = value("RotationValue").unwrap_or(1.0).clamp(0.0, 1.0);
+    // its size: the current control (in thousandths of a pixel), the older diameter, else the
+    // side of the tip it draws
+    let size = value("SizeValue")
+        .filter(|s| *s > 0.0)
+        .map(|s| s * 1000.0)
+        .or_else(|| value("diameter").filter(|d| *d > 0.0))
+        .or_else(|| brush.and_then(|b| stamp_side(b, &tip)));
     let amount = |option: &str| value(&format!("{option}Value")).unwrap_or(1.0).clamp(0.0, 1.0);
     // the hue turned, the saturation, the value (lighter or darker) and Darken (darker), each
     // as far as its amount where `id` drives it
@@ -425,6 +439,9 @@ fn brush_of<'p>(
     });
     KritaBrush {
         name: called.to_owned(),
+        size,
+        softness: value("SoftnessValue").unwrap_or(0.0).clamp(0.0, 1.0),
+        ratio: value("RatioValue").unwrap_or(1.0).clamp(0.01, 1.0),
         tip,
         spacing: own_spacing.map(|s| s * spacing_scale),
         angle: number(brush, "angle").unwrap_or(0.0),
@@ -435,19 +452,25 @@ fn brush_of<'p>(
         rotation_random: if driven("Rotation", "fuzzy") { turned } else { 0.0 },
         rotation_per_stroke: driven("Rotation", "fuzzystroke") && turned > 0.0,
         follows_tilt: driven("Rotation", "ascension"),
-        mirror: if driven("Mirror", "fuzzy") {
+        // mirrored every stamp, or only where the pen mirrors it
+        mirror: if flag("HorizontalMirrorEnabled") || flag("VerticalMirrorEnabled") || driven("Mirror", "fuzzy") {
             (flag("HorizontalMirrorEnabled"), flag("VerticalMirrorEnabled"))
         } else {
             (false, false)
         },
-        scatter: on("Scatter")
-            .then(|| KritaScatter {
-                amount: value("ScatterValue").or_else(|| value("Scattering/Amount")).unwrap_or(1.0).clamp(0.0, 5.0),
-                pressure: pressure_curve(param, "Scatter", true),
-                along: flag("Scattering/AxisX"),
-                across: flag("Scattering/AxisY"),
-            })
-            .filter(|s| (s.along || s.across) && s.amount > 0.0),
+        // its stamps spread at its amount, by the pen too where its pen settings say so
+        scatter: (on("Scatter")
+            || value("ScatterValue").is_some_and(|v| v > 0.0)
+            || value("Scattering/Amount").is_some_and(|v| v > 0.0))
+        .then(|| KritaScatter {
+            amount: value("ScatterValue").or_else(|| value("Scattering/Amount")).unwrap_or(1.0).clamp(0.0, 5.0),
+            pressure: pressure_curve(param, "Scatter", true),
+            // a preset that doesn't say which ways spreads along the stroke, as Krita does
+            along: flag("Scattering/AxisX")
+                || (param("Scattering/AxisX").is_none() && param("Scattering/AxisY").is_none()),
+            across: flag("Scattering/AxisY"),
+        })
+        .filter(|s| (s.along || s.across) && s.amount > 0.0),
         color_random: colours("fuzzy"),
         color_per_stroke: colours("fuzzystroke"),
         ratio_random: if driven("Ratio", "fuzzy") { amount("Ratio") } else { 0.0 },
@@ -470,14 +493,17 @@ fn brush_of<'p>(
 
 /// How pen pressure scales the setting `option` (`Size`, `Opacity`, `Flow`) of those `param`
 /// gives, as Krita reads it, if it does: none if the setting can be switched off (`checkable`,
-/// as the size can) and isn't on, if its pen settings are off (`UseCurve`), or if its sensors
-/// leave pressure out (with none, pressure drives it). The curve is the one its sensors share,
+/// as the size can) and isn't on, or if its sensors leave pressure out (with none, pressure
+/// drives it). A setting kept from a curve (`UseCurve` false) is driven by the pen straight. The curve is the one its sensors share,
 /// as they do unless told not to: its own key, else the sensor read last, else the older keys,
 /// else a straight line; or, not shared, the pressure sensor's own.
 fn pressure_curve<'p>(param: &dyn Fn(&str) -> Option<&'p str>, option: &str, checkable: bool) -> Option<Vec<Vec2>> {
     let key = |what: &str| param(&format!("{option}{what}"));
-    if (checkable && param(&format!("Pressure{option}")) != Some("true")) || key("UseCurve") == Some("false") {
+    if checkable && param(&format!("Pressure{option}")) != Some("true") {
         return None;
+    }
+    if key("UseCurve") == Some("false") {
+        return checkable.then(|| vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)]);
     }
     let definition = key("Sensor").unwrap_or_default();
     let root = xml::parse(definition);
@@ -1242,7 +1268,9 @@ mod tests {
         let random =
             read(&[("PressureScatter", "true"), ("ScatterSensor", &sensor("fuzzy")), ("Scattering/AxisX", "true")]);
         assert_eq!(random.scatter.unwrap().pressure, None);
-        assert_eq!(read(&[("ScatterValue", "0.5"), ("Scattering/AxisX", "true")]).scatter, None);
+        // its stamps spread at its own amount even without the pen driving them
+        let spread = read(&[("ScatterValue", "0.5"), ("Scattering/AxisX", "true")]).scatter.unwrap();
+        assert_eq!((spread.amount, spread.pressure, spread.along, spread.across), (0.5, None, true, false));
         // its colour at random: the hue each stamp, the value (lighter and darker) and Darken each
         // stroke; flattened at random, and by the pressure
         let coloured = read(&[
@@ -1268,6 +1296,42 @@ mod tests {
             (pressed.ratio_random, pressed.ratio_pressure),
             (0.0, Some(vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)]))
         );
+    }
+
+    /// A preset of nothing but `params`, read back.
+    fn from_params(params: &[(&str, &str)]) -> KritaBrush {
+        let mut xml = String::from("<Preset paintopid=\"paintbrush\" name=\"T\">");
+        for (name, value) in params {
+            xml.push_str(&param(name, value));
+        }
+        xml.push_str("</Preset>");
+        read_preset(&kpp(&xml), &|_| None).expect("a preset")
+    }
+
+    #[test]
+    fn a_preset_keeps_its_size_softness_and_roundness() {
+        let brush = from_params(&[("SizeValue", "0.144"), ("SoftnessValue", "0.64"), ("RatioValue", "0.83")]);
+        assert_eq!(brush.size, Some(144.0));
+        assert!((brush.softness - 0.64).abs() < 1e-4);
+        assert!((brush.ratio - 0.83).abs() < 1e-4);
+        // an old preset's diameter stands in for its size
+        assert_eq!(from_params(&[("diameter", "40")]).size, Some(40.0));
+        assert_eq!(from_params(&[]).size, None);
+    }
+
+    #[test]
+    fn a_pen_settings_switch_off_still_reads_as_a_straight_line() {
+        // `UseCurve` false means the pen drives the option straight, not that it is off
+        let straight = from_params(&[
+            ("PressureSize", "true"),
+            ("SizeUseCurve", "false"),
+            ("PressureRatio", "true"),
+            ("RatioUseCurve", "false"),
+        ]);
+        assert_eq!(straight.size_pressure, Some(vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)]));
+        assert_eq!(straight.ratio_pressure, Some(vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)]));
+        // and with the switch off too, the option is not driven at all
+        assert_eq!(from_params(&[("SizeUseCurve", "false")]).size_pressure, None);
     }
 
     #[test]

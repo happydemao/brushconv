@@ -1796,6 +1796,19 @@ fn krita_brush(k: &procraft_engine::krita::KritaBrush) -> Brush {
     if let Some(spacing) = k.spacing {
         b.spacing = Brush::spacing_within_reach(spacing);
     }
+    // its size in pixels: Krita's own canvas pixels, which are ours, from the least it goes to
+    if let Some(px) = k.size.filter(|p| p.is_finite() && *p > 0.0) {
+        let most = px.max(0.5).min(b.most_size() * b.size_unit());
+        b.max_size = most;
+        b.min_size = (px * 0.01).clamp(0.5, most);
+    }
+    // how soft its edge is, and how far it is flattened across
+    if k.softness > 0.0 {
+        b.hardness = (1.0 - k.softness).clamp(0.0, 1.0);
+    }
+    if k.ratio < 1.0 {
+        b.shape.roundness = k.ratio.clamp(LEAST_ROUNDNESS, 1.0);
+    }
     // Krita turns its tips counter-clockwise on the canvas, ours clockwise
     b.shape.rotation = (-k.angle).rem_euclid(std::f32::consts::TAU);
     if k.follows {
@@ -3161,6 +3174,9 @@ mod tests {
         let brush = |texture: KritaTexture| {
             krita_brush(&KritaBrush {
                 name: "Paper".into(),
+                size: None,
+                softness: 0.0,
+                ratio: 1.0,
                 tip: KritaTip::Round { hardness: 1.0, roundness: 1.0 },
                 spacing: None,
                 angle: 0.0,
@@ -3236,6 +3252,9 @@ mod tests {
         let brush = |texture: KritaTexture| {
             krita_brush(&KritaBrush {
                 name: "Pencil".into(),
+                size: None,
+                softness: 0.0,
+                ratio: 1.0,
                 tip: KritaTip::Round { hardness: 1.0, roundness: 1.0 },
                 spacing: None,
                 angle: 0.0,
@@ -3350,6 +3369,9 @@ mod tests {
         };
         let crease = KritaBrush {
             name: "Crease".into(),
+            size: None,
+            softness: 0.0,
+            ratio: 1.0,
             tip: KritaTip::Round { hardness: 1.0, roundness: 1.0 },
             spacing: None,
             angle: 0.0,
@@ -3406,6 +3428,9 @@ mod tests {
         let straight = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)];
         let built = KritaBrush {
             name: "Pen".into(),
+            size: None,
+            softness: 0.0,
+            ratio: 1.0,
             tip: KritaTip::Round { hardness: 1.0, roundness: 1.0 },
             spacing: None,
             angle: 0.0,
@@ -3455,6 +3480,9 @@ mod tests {
         let straight = vec![Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0)];
         let k = KritaBrush {
             name: "Spray".into(),
+            size: None,
+            softness: 0.0,
+            ratio: 1.0,
             tip: KritaTip::Round { hardness: 1.0, roundness: 1.0 },
             spacing: None,
             angle: 0.0,
@@ -3510,6 +3538,9 @@ mod tests {
         use procraft_engine::krita::{KritaBrush, KritaMasking, KritaTip};
         let brush = KritaBrush {
             name: "Mask".into(),
+            size: None,
+            softness: 0.0,
+            ratio: 1.0,
             tip: KritaTip::Round { hardness: 1.0, roundness: 1.0 },
             spacing: None,
             angle: 0.0,
