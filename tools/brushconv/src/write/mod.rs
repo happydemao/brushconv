@@ -5,6 +5,7 @@ mod brush;
 mod gbr;
 mod json;
 mod krita;
+mod prbr;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -28,6 +29,8 @@ pub enum OutputFormat {
     Bundle,
     /// GIMP's `.gbr`, one per brush.
     Gbr,
+    /// Infinite Painter's `.prbr`, one per brush.
+    Prbr,
     /// A JSON description of every brush.
     Json,
 }
@@ -42,6 +45,7 @@ impl OutputFormat {
             "kpp" | "krita" | "krita-preset" => Some(OutputFormat::Kpp),
             "bundle" | "krita-bundle" => Some(OutputFormat::Bundle),
             "gbr" | "gimp" | "gimp-brush" => Some(OutputFormat::Gbr),
+            "prbr" | "infinite-painter" | "infinitepainter" => Some(OutputFormat::Prbr),
             "json" | "meta" | "metadata" => Some(OutputFormat::Json),
             _ => None,
         }
@@ -56,6 +60,7 @@ impl OutputFormat {
             "kpp" => Some(OutputFormat::Kpp),
             "bundle" => Some(OutputFormat::Bundle),
             "gbr" => Some(OutputFormat::Gbr),
+            "prbr" => Some(OutputFormat::Prbr),
             "json" => Some(OutputFormat::Json),
             _ => None,
         }
@@ -69,6 +74,7 @@ impl OutputFormat {
             OutputFormat::Kpp => "kpp",
             OutputFormat::Bundle => "bundle",
             OutputFormat::Gbr => "gbr",
+            OutputFormat::Prbr => "prbr",
             OutputFormat::Json => "json",
         }
     }
@@ -81,6 +87,7 @@ impl OutputFormat {
             OutputFormat::Kpp => "Krita preset",
             OutputFormat::Bundle => "Krita bundle",
             OutputFormat::Gbr => "GIMP brush",
+            OutputFormat::Prbr => "Infinite Painter brush",
             OutputFormat::Json => "JSON metadata",
         }
     }
@@ -92,7 +99,7 @@ impl OutputFormat {
 
     /// Whether a file holds one brush (so a set needs a file each).
     pub fn one_per_brush(self) -> bool {
-        matches!(self, OutputFormat::Brush | OutputFormat::Kpp | OutputFormat::Gbr)
+        matches!(self, OutputFormat::Brush | OutputFormat::Kpp | OutputFormat::Gbr | OutputFormat::Prbr)
     }
 
     /// Whether it is a plain description rather than a brush file.
@@ -148,6 +155,7 @@ pub fn write_set(set: &BrushSet, format: OutputFormat, out: Option<&Path>, name:
         OutputFormat::Kpp => krita::write_preset(first)?,
         OutputFormat::Bundle => krita::write_bundle(&title, &set.brushes)?,
         OutputFormat::Gbr => gbr::write(first)?,
+        OutputFormat::Prbr => prbr::write(first)?,
         OutputFormat::Json => json::write(set)?,
     };
     std::fs::write(&path, bytes)?;
@@ -159,6 +167,7 @@ fn one_brush(brush: &Brush, format: OutputFormat) -> Result<Vec<u8>> {
         OutputFormat::Brush => brush::write_one(brush, author_of(brush)),
         OutputFormat::Kpp => krita::write_preset(brush),
         OutputFormat::Gbr => gbr::write(brush),
+        OutputFormat::Prbr => prbr::write(brush),
         _ => Err(Error::new("that format holds all brushes in one file")),
     }
 }

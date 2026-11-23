@@ -15,15 +15,32 @@ pub fn stroke(brush: &Brush) -> Result<Vec<u8>> {
 /// [`stroke`]'s pixels: RGBA8, straight alpha.
 pub fn stroke_rgba(brush: &Brush) -> Result<(u32, u32, Vec<u8>)> {
     let (width, height) = (preview::CANVAS.0 as u32, preview::CANVAS.1 as u32);
+    Ok((width, height, draw(brush, width, height, 1.0, 0.0, 0.0)?))
+}
+
+/// A stroke of `brush` drawn into `width`×`height`, the canvas scaled to fit and centred: a preview
+/// the sizes formats other than ProCraft ask for.
+pub fn stroke_sized(brush: &Brush, width: u32, height: u32) -> Result<Vec<u8>> {
+    let scale = (width as f32 / preview::CANVAS.0).min(height as f32 / preview::CANVAS.1);
+    let left = (width as f32 - preview::CANVAS.0 * scale) * 0.5;
+    let top = (height as f32 - preview::CANVAS.1 * scale) * 0.5;
+    let rgba = draw(brush, width, height, scale, left, top)?;
+    images::rgba_png(width, height, &rgba)
+}
+
+fn draw(brush: &Brush, width: u32, height: u32, scale: f32, left: f32, top: f32) -> Result<Vec<u8>> {
     let mut alpha = vec![0f32; width as usize * height as usize];
     let samples = preview::samples(brush);
     if samples.is_empty() {
-        return Ok((width, height, vec![0; width as usize * height as usize * 4]));
+        return Ok(vec![0; width as usize * height as usize * 4]);
     }
     let (tip_side, tip) = images::tip_gray(brush);
-    let diameter = preview::diameter(brush).clamp(1.0, 2000.0);
+    let diameter = preview::diameter(brush).clamp(1.0, 2000.0) * scale;
     let spacing = brush.spacing.clamp(0.02, 2.0);
     let step = (spacing * diameter).max(0.75);
+    // where the canvas's stroke lands in this picture
+    let points: Vec<(f32, f32, f32)> =
+        samples.iter().map(|s| (left + s.pos.x * scale, top + s.pos.y * scale, s.pressure)).collect();
     // how much pressure thins the stamp and lowers its opacity
     let pressure_size = brush.pressure_size.clamp(0.0, 1.0);
     let pressure_opacity = brush.pressure_opacity.clamp(0.0, 1.0);
@@ -34,10 +51,10 @@ pub fn stroke_rgba(brush: &Brush) -> Result<(u32, u32, Vec<u8>)> {
         stamp(alpha, width, height, &tip, tip_side, cx, cy, size, opacity);
     };
     let mut carry = 0.0;
-    let mut last = samples.first().map(|s| (s.pos.x, s.pos.y, s.pressure));
-    for next in samples.iter().skip(1) {
-        let (px, py, pp) = last.unwrap_or((next.pos.x, next.pos.y, next.pressure));
-        let (dx, dy) = (next.pos.x - px, next.pos.y - py);
+    let mut last = points.first().copied();
+    for next in points.iter().skip(1) {
+        let (px, py, pp) = last.unwrap_or(*next);
+        let (dx, dy) = (next.0 - px, next.1 - py);
         let length = (dx * dx + dy * dy).sqrt();
         if length.is_finite() && length > 0.0 {
             let steps = ((length + carry) / step).floor();
@@ -46,20 +63,20 @@ pub fn stroke_rgba(brush: &Brush) -> Result<(u32, u32, Vec<u8>)> {
                 let along = ((i as f32 * step) + (step - carry)) / length;
                 let along = along.clamp(0.0, 1.0);
                 let (x, y) = (px + dx * along, py + dy * along);
-                let pressure = pp + (next.pressure - pp) * along;
+                let pressure = pp + (next.2 - pp) * along;
                 let size = diameter * (1.0 - pressure_size * (1.0 - pressure)).max(0.05);
                 let opacity = opacity_at(brush, pressure, pressure_opacity);
                 paint(&mut alpha, x, y, size, opacity);
             }
             carry = (carry + length) % step;
         }
-        last = Some((next.pos.x, next.pos.y, next.pressure));
+        last = Some(*next);
     }
     let mut rgba = Vec::with_capacity(alpha.len() * 4);
     for a in alpha {
         rgba.extend_from_slice(&[0, 0, 0, (a.clamp(0.0, 1.0) * 255.0).round() as u8]);
     }
-    Ok((width, height, rgba))
+    Ok(rgba)
 }
 
 fn opacity_at(brush: &Brush, pressure: f32, pressure_opacity: f32) -> f32 {

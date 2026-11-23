@@ -56,7 +56,6 @@ pub fn read(bytes: &[u8]) -> Option<PrbrBrush> {
     let source = json.get("source-properties");
     let texture = json.get("texture-properties");
     let dynamics = json.get("dynamics-properties");
-    let pressure = dynamics.and_then(|d| d.get("pressure - effects"));
     let head_flow = number(head, "flow");
     let blend_flow = number(blend, "flow");
     Some(PrbrBrush {
@@ -69,9 +68,9 @@ pub fn read(bytes: &[u8]) -> Option<PrbrBrush> {
         head_flow,
         softness: number(head, "softness"),
         angle: number(head, "angle"),
-        pressure_size: flag(pressure, "size"),
+        pressure_size: effect(dynamics, "pressure - effects", "size"),
         size_profile: numbers(dynamics, "pressure profile - size"),
-        pressure_flow: flag(pressure, "flow"),
+        pressure_flow: effect(dynamics, "pressure - effects", "flow"),
         flow_profile: numbers(dynamics, "pressure profile - flow"),
         scatter: number(json.get("jitter-properties"), "scatter"),
         size_jitter: number(json.get("jitter-properties"), "size"),
@@ -87,6 +86,12 @@ pub fn read(bytes: &[u8]) -> Option<PrbrBrush> {
 /// A section's number, if it has one.
 fn number(section: Option<&Value>, key: &str) -> Option<f32> {
     section.and_then(|s| s.get(key)).and_then(Value::as_f64).map(|n| n as f32).filter(|n| n.is_finite())
+}
+
+/// An effect's switch: the app writes it flat ("pressure - effects size"), an older export of ours
+/// nested it under the effect's name; both read.
+fn effect(section: Option<&Value>, name: &str, key: &str) -> bool {
+    flag(section, &format!("{name} {key}")) || flag(section.and_then(|s| s.get(name)), key)
 }
 
 /// A section's switch, if it has one.
@@ -139,7 +144,8 @@ mod tests {
             "texture-properties": { "scale": 1.0 },
             "jitter-properties": { "scatter": 0.5, "size": 0.25 },
             "dynamics-properties": {
-                "pressure - effects": { "size": true, "flow": true },
+                "pressure - effects size": true,
+                "pressure - effects flow": true,
                 "pressure profile - size": [0.0, 1.0, 0.375, 0.35477942, 1.0, 0.0],
                 "pressure profile - flow": [0.0, 0.98897, 1.0, 0.0]
             }
@@ -165,6 +171,19 @@ mod tests {
         assert_eq!(brush.head.as_deref(), Some("head_chalk_faded"));
         assert_eq!(brush.texture.as_deref(), Some("texture_4"));
         assert_eq!(brush.preview_png.as_deref(), Some(b"\x89PNG preview".as_slice()));
+    }
+
+    #[test]
+    fn an_effect_nested_under_its_name_reads_too() {
+        let properties = r#"{
+            "display-name": "Nested",
+            "dynamics-properties": { "pressure - effects": { "size": true, "flow": false } }
+        }"#;
+        let mut zip = ZipWriter::new();
+        zip.add("properties.json", properties.as_bytes());
+        let brush = read(&zip.finish()).unwrap();
+        assert!(brush.pressure_size);
+        assert!(!brush.pressure_flow);
     }
 
     #[test]

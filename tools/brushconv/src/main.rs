@@ -11,8 +11,8 @@ brushconv — cross-platform brush format converter
 
 Reads ProCraft .brush/.brushset/.brushlibrary, Photoshop .abr, Krita .kpp/.bundle,
 GIMP .gbr/.gih/.vbr, Clip Studio .sut/.sutg and Infinite Painter .prbr, and writes
-ProCraft, Photoshop, Krita or GIMP brushes (Clip Studio .sut and Infinite Painter
-.prbr are read-only).
+ProCraft, Photoshop, Krita, GIMP or Infinite Painter brushes (Clip Studio .sut is
+read-only, and Infinite Painter's .prbr is new: check it in the app before relying on it).
 
 USAGE:
     brushconv [OPTIONS] <INPUT>...
@@ -22,7 +22,7 @@ ARGS:
 
 OPTIONS:
     -o, --output <PATH>    Output file, or folder for several brushes/inputs
-    -t, --to <FORMAT>      brush | brushset | abr | kpp | bundle | gbr | json
+    -t, --to <FORMAT>      brush | brushset | abr | kpp | bundle | gbr | prbr | json
     -n, --name <NAME>      Name the output set (default: the input's name)
     -l, --list             List the brushes and their settings, writing nothing
     -r, --recursive        Look in folders' subfolders too

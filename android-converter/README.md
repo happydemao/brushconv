@@ -1,12 +1,30 @@
 # Brush Converter for Android
 
-A small Android app that does one thing: converts brush files. It reads everything
-the converter reads (`.brush`, `.brushset`, `.abr`, `.gih`, `.vbr`, `.kpp`, `.bundle`,
-`.gbr`, `.pat`, `.sut`, `.sutg`, `.prbr`) and writes ProCraft brushes and sets,
-Photoshop `.abr`, Krita presets and bundles, GIMP `.gbr`, and JSON. There is no
-painting, no canvas, no other feature.
+A small Android app that does one thing: converts brush files. There is no painting,
+no canvas, no other feature.
 
 <p align="center"><em>Pick files → pick a format → pick a folder. That's the app.</em></p>
+
+| Format | Read | Write | What it holds |
+| --- | --- | --- | --- |
+| ProCraft `.brush` / `.brushset` | yes | yes | the whole brush model; lossless round trip |
+| ProCraft `.brushlibrary` | yes | — | read as its sets, written as a `.brushset` |
+| Photoshop `.abr` | yes | yes | writes v2 sampled tips; reads Photoshop's settings |
+| Photoshop `.gih` / `.vbr` | yes | — | read as brush tips |
+| Clip Studio `.sut` / `.sutg` | yes | — | the SQLite library's names, settings and material PNGs |
+| Krita `.kpp` / `.bundle` | yes | yes | preset XML with an embedded tip, grain and a stroke preview |
+| GIMP `.gbr` | yes | yes | a grey tip with name and spacing |
+| GIMP `.pat` | yes | — | read as a textured stamp |
+| Infinite Painter `.prbr` | yes | yes (experimental) | `properties.json`, a sample stroke and pictures |
+| JSON | — | yes | every setting, for scripts |
+
+A format's fidelity is the same as the CLI's: the full per-format list of what can
+be imported and exported is in `../tools/brushconv/README.md`. In short, ProCraft's
+own files keep everything; `.abr` keeps the tip, name and spacing but no ranges,
+grain or curves; `.kpp` keeps the tip, grain, spacing and pressure curves but not the
+size range; `.gbr` keeps only a grey tip, name and spacing; `.prbr` keeps the tip,
+grain, size maximum, opacity, spacing, pressure curves, scatter and jitter, and is
+new enough to be marked experimental.
 
 ## How it works
 
@@ -48,8 +66,9 @@ distributing it.
 
 ## Limits
 
-- The formats the CLI can only read (`.sut`, `.sutg`, `.prbr`, `.gih`, `.vbr`,
-  `.pat`, `.brushlibrary`) are input only; the same fidelity table as the CLI
-  applies — see `../tools/brushconv/README.md`.
+- The formats the CLI can only read (`.sut`, `.sutg`, `.gih`, `.vbr`, `.pat`,
+  `.brushlibrary`) are input only. `.prbr` is written on a best-effort basis: Infinite
+  Painter does not document how it stores embedded art, so check a converted brush in
+  the app.
 - The native library is ~23 MB (it shares the Rust brush core with ProCraft), so the
   APK is ~24 MB.

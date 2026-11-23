@@ -10,23 +10,80 @@ brushconv [OPTIONS] <INPUT>...
 
 ## Formats
 
-| Format | Read | Write | Notes |
+| Format | Read | Write | What it holds |
 | --- | --- | --- | --- |
-| ProCraft `.brush` | yes | yes | full fidelity: tip, grain, size/opacity ranges, curves, dual brush |
-| ProCraft `.brushset` | yes | yes | several brushes, folders and thumbnails |
-| ProCraft `.brushlibrary` | yes | — | read as its sets; writing keeps `.brushset` |
-| Photoshop `.abr` | yes | yes | writes version 2 sampled tips; size/settings come from the tip |
-| Photoshop `.gih` / `.vbr` | yes | — | read as brush tips |
-| Krita `.kpp` | yes | yes | paintbrush preset with an embedded tip (and grain) |
-| Krita `.bundle` | yes | yes | preset bundle with manifest and md5 resource names |
-| GIMP `.gbr` | yes | yes | grey tip with GIMP v2 header |
+| ProCraft `.brush` | yes | yes | everything the engine models: tips, grain, ranges, curves, dual brush |
+| ProCraft `.brushset` | yes | yes | a named set of brushes with folders and thumbnails |
+| ProCraft `.brushlibrary` | yes | — | read as its sets; written back as a `.brushset` |
+| Photoshop `.abr` | yes | yes | written as version 2 sampled tips; Photoshop's own brush settings are read |
+| Photoshop `.gih` / `.vbr` | yes | — | read as brush tips (ranked and parametric variants) |
+| Clip Studio `.sut` / `.sutg` | yes | — | the SQLite brush library: node names, settings, material PNGs |
+| Krita `.kpp` | yes | yes | a paintbrush preset PNG with the settings XML and embedded tip |
+| Krita `.bundle` | yes | yes | a preset bundle with `manifest.xml` and md5-named resources |
+| GIMP `.gbr` | yes | yes | a grey brush tip with the GIMP v2 header |
 | GIMP `.pat` | yes | — | read as a textured brush stamp |
-| Clip Studio `.sut` / `.sutg` | yes | — | read from the SQLite brush library; there is no writer |
-| Infinite Painter `.prbr` | yes | — | zip of `properties.json` and a sample stroke; the app's own heads and textures are named, not held, so a head becomes a round tip (a custom head comes as its picture) |
+| Infinite Painter `.prbr` | yes | yes (experimental) | a zip of `properties.json`, a sample stroke and pictures |
 
 Formats are recognised by file name first, then by their contents (PNG signature,
 ZIP entries, SQLite header, GIMP header, ABR version word), so a renamed file still
 reads.
+
+## What each format can import and export
+
+**ProCraft `.brush` / `.brushset` / `.brushlibrary`** — reads and writes the whole
+brush model: the tip picture (or a round tip drawn from the hardness), the grain
+picture with its mode, scale and depth, spacing, size and opacity ranges, flow,
+pressure-to-size, pressure-to-opacity and pressure-to-flow with their curves, size
+and opacity jitter, scatter, shape rotation, the dual brush with its own pictures,
+the author's name and pictures, the thumbnail and any extra slider settings. The
+ProCraft writer is the lossless round trip; `.brushlibrary` is read-only because a
+library's extra level of sets has no writer.
+
+**Photoshop `.abr`** — reads sampled tip bitmaps (8- and 16-bit, raw or PackBits),
+the brush name, spacing, angle, roundness, hardness, diameter, the pressure and tilt
+dynamics flags, texture and pattern references, dual-brush references, blend mode,
+colour and noise. ProCraft derives a brush's size from the tip's pixels (0.03277% a
+pixel), so an imported ABR opens at the size its stamp implies. The writer emits
+version 2 sampled brushes only: one 8-bit grey tip (up to 5000 px a side), the name,
+spacing and the tip's implied size. Version 2 has nowhere to say a size range,
+opacity, grain, curves or a dual brush, so those are lost. `.gih` and `.vbr` are
+read as tips and have no writer.
+
+**Clip Studio `.sut` / `.sutg`** — reads the library's `Node`/`Variant`/`MaterialFile`
+tables: brush names, the settings ProCraft models, and the material PNGs (tip,
+texture, dual brush) inside the tar blobs. Import-only: writing Clip Studio's SQLite
+schema is out of scope, so `.sut` never appears as an output format.
+
+**Krita `.kpp` / `.bundle`** — reads a preset's XML parameters and the pictures in
+its `<resources>`: the tip (a drawn `auto_brush` or an embedded PNG/`.gbr` image),
+spacing, angle, opacity, flow, the pressure size/opacity switches and sensor curves,
+texture and pattern, and the paint-op (build-up or wash) mode. The writer stores the
+tip as an embedded PNG resource, draws a 1060×324 stroke preview into the `.kpp`'s
+own image, and writes the settings ProCraft models: spacing, angle, opacity, flow,
+pressure-to-size and pressure-to-flow curves, grain as a pattern resource. Krita has
+no notion of ProCraft's size range, so presets open at Krita's 1–120 px default; the
+dual brush and the author pictures have no Krita equivalent and are not written.
+
+**GIMP `.gbr`** — reads a grey tip, its name and spacing; `.gih` ranked tips and
+`.vbr` parametric brushes become tips too, and `.pat` becomes a stamp. The writer
+emits a GIMP v2 grey brush: an 8-bit single-channel tip, the name and the spacing
+percentage. GIMP brushes carry no colour, size range, grain or pressure settings, so
+all of those are lost.
+
+**Infinite Painter `.prbr`** — reads a zip of `properties.json` and a `preview` PNG:
+the custom head picture, paint size, size maximum, paint opacity, flow, softness,
+angle, spacing, the pressure-to-size and pressure-to-flow effects with their
+profiles, scatter and size jitter, and the sample stroke. Named built-in heads and
+textures, the tilt and velocity dynamics, the blend and wet settings, and the jitter
+channels ProCraft does not model stay behind. The writer is **experimental**: it
+zips a white-on-transparent `head.png`, a `texture.png` when the brush has a grain,
+a 512×128 sample stroke as `preview`, and a `properties.json` with every section the
+app's own exports have, defaults left where ProCraft has no control. Infinite
+Painter does not document how it stores embedded art (its own heads are named, not
+held), so the `custom-head` / `custom-stroke texture` convention is a best guess;
+the file round-trips through this tool's own reader exactly for size, opacity,
+softness, angle, spacing and the pressure switches, but check it in the app before
+relying on it.
 
 ## Usage
 
@@ -78,16 +135,19 @@ file per brush into the output folder instead.
 
 ProCraft's own formats are lossless. The others carry what their format can say:
 
-| Setting | `.brush`/`.brushset` | `.abr` | `.kpp`/`.bundle` | `.gbr` |
-| --- | --- | --- | --- | --- |
-| brush tip image | yes | yes | yes | yes |
-| grain/texture | yes | no | yes (pattern) | no |
-| size range | yes | no (tip size) | default 1–120 | no (tip size) |
-| opacity range | yes | no | max opacity | no |
-| spacing | yes | percent | fraction | percent |
-| pressure → size/opacity | yes, with curves | no | yes (pressure sensors) | no |
-| dual brush | yes | no | no | no |
-| thumbnail | yes | no | stroke preview | no |
+| Setting | `.brush`/`.brushset` | `.abr` | `.kpp`/`.bundle` | `.gbr` | `.prbr` |
+| --- | --- | --- | --- | --- | --- |
+| brush tip image | yes | yes | yes | yes | yes |
+| grain/texture | yes | no | yes (pattern) | no | yes (texture) |
+| size range | yes | no (tip size) | no (Krita default) | no (tip size) | size maximum only |
+| opacity range | yes | no | max opacity | no | max opacity |
+| spacing | yes | percent | fraction | percent | fraction |
+| pressure → size | yes, with curves | no | yes (sensor curve) | no | yes, with profile |
+| pressure → opacity | yes, with curves | no | yes (sensor) | no | no |
+| pressure → flow | yes, with curve | no | no | no | yes, with profile |
+| scatter / size jitter | yes | no | no | no | yes |
+| dual brush | yes | no | no | no | no |
+| thumbnail | yes | no | stroke preview | no | preview |
 
 The ABR writer emits version 2 sampled brushes, the variant Photoshop and most other
 apps read without extra metadata; a brush's Photoshop size therefore follows its
@@ -140,4 +200,7 @@ format, read the results back, and check the names and counts. Beyond that:
 - `src/preview.rs` — the CPU stroke drawn into Krita presets and thumbnail fallbacks.
 - `src/md5.rs` — MD5 for Krita's resource names.
 - `src/write/brush.rs` — ProCraft `.brush`/`.brushset` through `engine::brushfile`.
-- `src/write/abr.rs`, `gbr.rs`, `krita.rs`, `json.rs` — the other writers.
+- `src/write/abr.rs`, `gbr.rs`, `krita.rs`, `prbr.rs`, `json.rs` — the other writers.
+
+`../brushconv-ffi` exposes `formats()`, `inspect()` and `convert()` to the Android app;
+`../../android-converter` is that app.

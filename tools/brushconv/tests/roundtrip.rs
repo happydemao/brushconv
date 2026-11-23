@@ -72,6 +72,7 @@ fn one_brush_round_trips_through_the_one_brush_formats() {
         (OutputFormat::Brush, "Round Pen.brush"),
         (OutputFormat::Kpp, "Round Pen.kpp"),
         (OutputFormat::Gbr, "Round Pen.gbr"),
+        (OutputFormat::Prbr, "Round Pen.prbr"),
     ] {
         let single = brushconv::BrushSet {
             name: brush.name.clone(),

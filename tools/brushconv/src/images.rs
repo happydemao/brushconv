@@ -57,6 +57,37 @@ pub fn grain_gray(brush: &Brush) -> Option<(u32, Vec<u8>)> {
     brush.grain.image.and_then(textures::grain_image).map(|g| (textures::TEXTURE_SIZE as u32, g.pixels))
 }
 
+/// `side`'s grey image boxed down to `max` a side, if it is bigger: what a writer whose format
+/// takes smaller pictures than ours sends.
+pub fn fit_gray(side: u32, pixels: &[u8], max: u32) -> (u32, Vec<u8>) {
+    let n = side as usize;
+    if max == 0 || n <= max as usize || pixels.len() != n * n {
+        return (side, pixels.to_vec());
+    }
+    let small = max as usize;
+    let mut out = Vec::with_capacity(small * small);
+    for y in 0..small {
+        let top = y * n / small;
+        let bottom = ((y + 1) * n / small).max(top + 1);
+        for x in 0..small {
+            let left = x * n / small;
+            let right = ((x + 1) * n / small).max(left + 1);
+            let mut sum = 0u32;
+            let mut count = 0u32;
+            for row in top..bottom {
+                for column in left..right {
+                    if let Some(&pixel) = pixels.get(row * n + column) {
+                        sum += u32::from(pixel);
+                        count += 1;
+                    }
+                }
+            }
+            out.push((sum / count.max(1)) as u8);
+        }
+    }
+    (max, out)
+}
+
 /// A grey PNG, 8 bits a pixel.
 pub fn gray_png(side: u32, pixels: &[u8]) -> Result<Vec<u8>> {
     encode(side, side, png::ColorType::Grayscale, pixels)
