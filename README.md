@@ -1,3 +1,53 @@
+<h1 align="center">Brush Converter</h1>
+
+<p align="center">
+  <b>Convert brush files between ProCraft, Photoshop, Krita, GIMP, Infinite Painter and PaintTool SAI2 — from the command line or from a small Android app.</b><br>
+  One Rust binary, no Python, no GPU: read a brush or a whole set, write it in any of the other formats, and see exactly which settings each format keeps.
+</p>
+
+<p align="center">
+  <a href="https://github.com/happydemao/brushconv/releases"><img alt="Releases" src="https://img.shields.io/badge/releases-windows%20%C2%B7%20linux%20%C2%B7%20macos%20%C2%B7%20android-blue"></a>
+  <img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue">
+  <img alt="Android 8 and up" src="https://img.shields.io/badge/android-8%2B%20arm64-lightblue">
+</p>
+
+## Formats
+
+| Format | Read | Write | Notes |
+| --- | --- | --- | --- |
+| ProCraft `.brush`, `.brushset`, `.brushlibrary` | yes | yes | the only format that keeps every field, including author and materials |
+| Photoshop `.abr` | yes | yes | writes v2 sampled tips; sizes, opacity and grain are not carried by that version |
+| Krita `.kpp`, `.bundle` | yes | yes | size, softness, ratio, angle, scatter, mirroring, colour jitter, a masking brush and the stroke preview |
+| GIMP `.gbr` | yes | yes | one grey tip, name and spacing |
+| Infinite Painter `.prbr` | yes | yes | the writer is experimental; see [`tools/brushconv/README.md`](tools/brushconv/README.md) |
+| PaintTool SAI2 `.saitdat` | yes | yes | SAI2 keeps textures beside the tool, so a converted tool gets a round tip |
+| CSP `.sut`, `.sutg` | yes | no | SQLite container, no writer |
+| JSON | — | yes | every setting the converter knows, for scripting |
+
+## Command line
+
+```sh
+cargo build --release -p brushconv            # one binary, no GPU
+
+brushconv Inking.brushset -o out/ --to abr    # a whole set into one .abr
+brushconv 2.bundle --list                     # what is inside, with sizes
+brushconv set/ -o out/ --to kpp               # one .kpp per brush
+```
+
+Every output can be read back; `--list` shows the format, the brush count, sizes, spacing and opacity. See [`tools/brushconv/README.md`](tools/brushconv/README.md) for all options, the per-format fidelity matrix and the comparison with [Brush Bridge](https://github.com/CanderFlower/brush-bridge).
+
+## Android app
+
+[`android-converter`](android-converter) is a standalone, conversion-only app: pick brush files through the system file picker, pick an output folder, convert. It shows a brush editor first, marking which fields the file brought in and which the chosen output format will keep, and draws a graph for every curve parameter (pressure to size, to opacity, to flow, to roundness). Grab `brushconv-*-android-arm64.apk` from [Releases](https://github.com/happydemao/brushconv/releases).
+
+## This repository
+
+This repository is a derivative of [ProCraft](https://github.com/artcraft-android/procraft) (MIT OR Apache-2.0), keeping the painting app and its history. On top of it live [`tools/brushconv`](tools/brushconv), its [`tools/brushconv-ffi`](tools/brushconv-ffi) bindings, the [`android-converter`](android-converter) app, and the readers/writers for the formats above. See [NOTICE](NOTICE).
+
+---
+
+The rest of this README belongs to ProCraft, the painting app this converter is built on.
+
 <p align="center">
   <img src="assets/app-icon/procraft-1024.png" alt="ProCraft's app icon: a paintbrush in a warm-to-cool blend on a black tile" width="128">
 </p>
@@ -9,7 +59,6 @@
   Pressure-sensitive brushes, layers with blend modes, adjustments, selection and transform, animation and 3D painting, written from scratch.
 </p>
 
-> **This repository is a derivative of ProCraft (MIT OR Apache-2.0), built to carry a cross-platform brush format converter.** The painting app, the engine and their history are kept as they are; added on top are the [`tools/brushconv`](tools/brushconv) command-line converter, its [`tools/brushconv-ffi`](tools/brushconv-ffi) bindings, a conversion-only Android app in [`android-converter`](android-converter), and readers/writers for ProCraft `.brush`/`.brushset`, Photoshop `.abr`, Krita `.kpp`/`.bundle`, GIMP `.gbr`, Infinite Painter `.prbr` and PaintTool SAI2 `.saitdat`. See [NOTICE](NOTICE) for the upstream attribution.
 
 <p align="center">
   <a href="https://github.com/artcraft-android/procraft/releases"><img src="https://raw.githubusercontent.com/Kunzisoft/Github-badge/main/get-it-on-github.png" alt="Get it on GitHub" height="60"></a>
