@@ -96,6 +96,12 @@ ProCraft size range only as the pressure curve, so Krita opens them at its usual
 1–120 px default. `.sut` is import-only because writing Clip Studio's SQLite library
 is out of scope; the reader covers the material and settings columns ProCraft uses.
 
+## The Android app
+
+`../../android-converter` is a converter-only Android app (no painting) around the same
+code, through the UniFFI crate in `../brushconv-ffi`. Build it with
+`android-converter/build.sh`.
+
 ## Building
 
 The tool is a member of the ProCraft Cargo workspace:

@@ -393,6 +393,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "brushconv-ffi"
+version = "0.0.1"
+dependencies = [
+ "brushconv",
+ "thiserror 2.0.21",
+ "uniffi",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

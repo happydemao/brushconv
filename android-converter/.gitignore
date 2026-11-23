@@ -1,0 +1,11 @@
+# Gradle's build outputs and the local SDK path
+.gradle/
+build/
+app/build/
+local.properties
+
+# The Rust library and its generated Kotlin bindings are built by build.sh (like the painting
+# app's, which the Gradle build generates)
+app/src/main/jniLibs/
+app/src/main/java/io/github/brushconv/core/
+.DS_Store
