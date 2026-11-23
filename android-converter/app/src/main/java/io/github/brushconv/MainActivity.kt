@@ -21,6 +21,7 @@ import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import io.github.brushconv.core.BrushFields
+import io.github.brushconv.core.FieldInfo
 import io.github.brushconv.core.BrushInfo
 import io.github.brushconv.core.FormatInfo
 import io.github.brushconv.core.Inspection
@@ -335,32 +336,49 @@ class MainActivity : Activity() {
             },
         )
         for (field in reportEntry.fields) {
-            fieldsView.addView(
-                LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(10), dp(5), dp(10), dp(5))
-                    addView(if (field.imported) dot(IMPORTED_COLOR) else dot(OFF_COLOR))
-                    addView(if (field.exportable) dot(EXPORTABLE_COLOR) else dot(OFF_COLOR))
-                    addView(
-                        TextView(this@MainActivity).apply {
-                            text = labelOf(field.key, field.label)
-                            textSize = 14f
-                            setPadding(dp(8), 0, dp(8), 0)
-                            setTypeface(typeface, if (field.imported || field.exportable) Typeface.BOLD else Typeface.NORMAL)
-                        },
-                        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
-                    )
-                    addView(
-                        TextView(this@MainActivity).apply {
-                            text = field.value
-                            textSize = 13f
-                            setTextColor(if (field.imported) Color.DKGRAY else Color.GRAY)
-                        },
-                    )
-                },
-            )
+            val block = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            block.addView(fieldRow(field))
+            val curve = field.curve
+            if (!curve.isNullOrEmpty()) {
+                block.addView(
+                    CurveView(this, curve, if (field.imported) IMPORTED_COLOR else Color.GRAY),
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(150)).apply { setMargins(dp(24), 0, dp(14), dp(6)) },
+                )
+                block.addView(
+                    TextView(this).apply {
+                        text = "横轴：笔压 0–100%    纵轴：这一项的输出"
+                        textSize = 10f
+                        setTextColor(Color.GRAY)
+                        setPadding(dp(26), 0, dp(10), dp(8))
+                    },
+                )
+            }
+            fieldsView.addView(block)
         }
+    }
+
+    private fun fieldRow(field: FieldInfo): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(10), dp(6), dp(10), dp(4))
+        addView(if (field.imported) dot(IMPORTED_COLOR) else dot(OFF_COLOR))
+        addView(if (field.exportable) dot(EXPORTABLE_COLOR) else dot(OFF_COLOR))
+        addView(
+            TextView(this@MainActivity).apply {
+                text = labelOf(field.key, field.label)
+                textSize = 14f
+                setPadding(dp(8), 0, dp(8), 0)
+                setTypeface(typeface, if (field.imported || field.exportable) Typeface.BOLD else Typeface.NORMAL)
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        addView(
+            TextView(this@MainActivity).apply {
+                text = field.value
+                textSize = 13f
+                setTextColor(if (field.imported) Color.DKGRAY else Color.GRAY)
+            },
+        )
     }
 
     private fun labelOf(key: String, fallback: String): String = when (key) {
@@ -368,15 +386,19 @@ class MainActivity : Activity() {
         "tip" -> "笔尖"
         "grain" -> "颗粒 / 纹理"
         "spacing" -> "间距"
+        "hardness" -> "软硬度"
         "size" -> "尺寸范围"
         "opacity" -> "不透明度"
         "flow" -> "流量"
         "pressure_size" -> "压力 → 尺寸"
         "pressure_opacity" -> "压力 → 不透明度"
         "pressure_flow" -> "压力 → 流量"
+        "pressure_roundness" -> "压力 → 圆度"
         "scatter" -> "散布"
         "jitter" -> "尺寸抖动"
         "rotation" -> "旋转角度"
+        "roundness" -> "圆度（压扁）"
+        "follow" -> "跟随笔迹方向"
         "dual" -> "双笔刷"
         "author" -> "作者"
         "thumbnail" -> "缩略图"

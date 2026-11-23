@@ -58,6 +58,15 @@ pub struct FieldInfo {
     pub imported: bool,
     /// Whether the chosen output format writes this field.
     pub exportable: bool,
+    /// The input-to-output curve behind a pressure dynamic, from 0 to 1, when the field has one.
+    pub curve: Option<Vec<CurvePoint>>,
+}
+
+/// One point of a field's curve, both ends from 0 to 1.
+#[derive(Clone, Copy, Debug, uniffi::Record)]
+pub struct CurvePoint {
+    pub x: f64,
+    pub y: f64,
 }
 
 /// One brush's fields, for the editor.
@@ -146,6 +155,9 @@ fn field(field: Field) -> FieldInfo {
         value: field.value,
         imported: field.imported,
         exportable: field.exportable,
+        curve: field
+            .curve
+            .map(|points| points.into_iter().map(|(x, y)| CurvePoint { x: f64::from(x), y: f64::from(y) }).collect()),
     }
 }
 
@@ -200,6 +212,17 @@ mod tests {
         assert!(!size.exportable, "an ABR does not");
         let tip = brushes[0].fields.iter().find(|f| f.key == "tip").expect("tip");
         assert!(tip.imported && tip.exportable);
+    }
+
+    #[test]
+    fn the_editor_gets_the_curve_of_a_pressure_dynamic() {
+        let brushes = fields("Inking.brushset".to_owned(), inking(), "kpp".to_owned()).expect("fields");
+        let size = brushes[0].fields.iter().find(|f| f.key == "pressure_size").expect("size");
+        let curve = size.curve.as_ref().expect("the round pen follows pressure");
+        assert!(!curve.is_empty());
+        assert!(curve.iter().all(|point| (0.0..=1.0).contains(&point.x) && (0.0..=1.0).contains(&point.y)));
+        let rotation = brushes[0].fields.iter().find(|f| f.key == "rotation").expect("rotation");
+        assert!(rotation.curve.is_none());
     }
 
     #[test]

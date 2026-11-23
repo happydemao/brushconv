@@ -42,6 +42,13 @@ conversion is visible before a folder is picked rather than after. The values sh
 are the brush's actual ones, so a `.kpp` export showing `尺寸范围 3 – 144` really is
 what Krita will get. The editor is read-only for now: it reports, it does not edit.
 
+Parameters that are curves — pressure → size, opacity, flow and roundness — are drawn
+under their row as a graph of the curve the file actually holds: pen pressure along
+the bottom, what it drives up the side, with each stored point marked. The other
+parameters the brush model has (hardness, roundness, whether the stamp follows the
+stroke's direction, scatter, jitter, the dual brush) are listed beside them, so the
+editor is a full picture of the brush rather than a summary.
+
 The field list and the per-format read/write sets live in
 `../tools/brushconv/src/fields.rs`; `../tools/brushconv-ffi` exposes them as
 `fields(name, bytes, target)`.

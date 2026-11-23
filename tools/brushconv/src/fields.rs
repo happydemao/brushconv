@@ -2,7 +2,8 @@
 //! take away. The app shows this beside each field so a conversion's losses are visible before it
 //! happens rather than after.
 
-use procraft_engine::brush::Brush;
+use procraft_engine::brush::{Brush, PressureCurve};
+use procraft_engine::curve::Curve;
 
 use crate::read::SourceFormat;
 use crate::write::OutputFormat;
@@ -14,43 +15,53 @@ pub struct Field {
     pub value: String,
     pub imported: bool,
     pub exportable: bool,
+    /// The input-to-output curve behind a pressure dynamic, 0..1 each, for the editor to draw.
+    pub curve: Option<Vec<(f32, f32)>>,
 }
 
 /// Every field the editor knows, in the order it shows them.
-const FIELDS: [(&str, &str); 16] = [
+const FIELDS: [(&str, &str); 20] = [
     ("name", "Name"),
     ("tip", "Tip"),
     ("grain", "Grain"),
     ("spacing", "Spacing"),
+    ("hardness", "Hardness"),
     ("size", "Size range"),
     ("opacity", "Opacity"),
     ("flow", "Flow"),
     ("pressure_size", "Pressure → size"),
     ("pressure_opacity", "Pressure → opacity"),
     ("pressure_flow", "Pressure → flow"),
+    ("pressure_roundness", "Pressure → roundness"),
     ("scatter", "Scatter"),
     ("jitter", "Size jitter"),
     ("rotation", "Rotation"),
+    ("roundness", "Roundness"),
+    ("follow", "Follows direction"),
     ("dual", "Dual brush"),
     ("author", "Author"),
     ("thumbnail", "Thumbnail"),
 ];
 
 /// Everything ProCraft's own files keep.
-const ALL: [&str; 16] = [
+const ALL: [&str; 20] = [
     "name",
     "tip",
     "grain",
     "spacing",
+    "hardness",
     "size",
     "opacity",
     "flow",
     "pressure_size",
     "pressure_opacity",
     "pressure_flow",
+    "pressure_roundness",
     "scatter",
     "jitter",
     "rotation",
+    "roundness",
+    "follow",
     "dual",
     "author",
     "thumbnail",
@@ -58,33 +69,39 @@ const ALL: [&str; 16] = [
 
 /// What a format's reader sets, as far as the editor shows it. A brush file carries more than
 /// this; these are the parts ProCraft turns into a `Brush`.
-fn reads(format: SourceFormat) -> &'static [&'static str] {
-    use SourceFormat::*;
-    match format {
-        ProCraft | ProCraftSet | ProCraftLibrary => &ALL,
-        Abr => &["name", "tip", "spacing", "scatter", "rotation", "dual"],
-        Gih | Vbr | Gbr => &["tip"],
-        Krita | KritaBundle => &[
+fn reads(source: SourceFormat) -> &'static [&'static str] {
+    match source {
+        SourceFormat::ProCraft | SourceFormat::ProCraftSet | SourceFormat::ProCraftLibrary => &ALL,
+        SourceFormat::Abr => &["name", "tip", "spacing", "scatter", "rotation", "roundness", "dual"],
+        SourceFormat::Gbr | SourceFormat::Gih | SourceFormat::Vbr => &["tip"],
+        SourceFormat::Krita | SourceFormat::KritaBundle => &[
             "name",
             "tip",
             "grain",
             "spacing",
+            "hardness",
             "size",
             "opacity",
             "flow",
             "pressure_size",
             "pressure_opacity",
             "pressure_flow",
+            "pressure_roundness",
             "scatter",
+            "jitter",
             "rotation",
+            "roundness",
             "dual",
         ],
-        Csp | CspGroup => &["name", "tip", "grain", "spacing", "opacity", "flow", "pressure_size", "dual"],
-        Prbr => &[
+        SourceFormat::Csp | SourceFormat::CspGroup => {
+            &["name", "tip", "grain", "spacing", "hardness", "opacity", "flow", "pressure_size", "dual"]
+        }
+        SourceFormat::Prbr => &[
             "name",
             "tip",
             "grain",
             "spacing",
+            "hardness",
             "size",
             "opacity",
             "flow",
@@ -94,37 +111,41 @@ fn reads(format: SourceFormat) -> &'static [&'static str] {
             "jitter",
             "rotation",
         ],
-        Unknown => &[],
+        SourceFormat::Unknown => &[],
     }
 }
 
-/// What a format's writer sets.
-fn writes(format: OutputFormat) -> &'static [&'static str] {
-    use OutputFormat::*;
-    match format {
-        Brush | BrushSet => &ALL,
-        Abr => &["name", "tip", "spacing"],
-        Kpp | Bundle => &[
+/// What a writer keeps of the brush.
+fn writes(target: OutputFormat) -> &'static [&'static str] {
+    match target {
+        OutputFormat::Brush | OutputFormat::BrushSet | OutputFormat::Json => &ALL,
+        OutputFormat::Abr => &["name", "tip", "spacing"],
+        OutputFormat::Gbr => &["name", "tip", "spacing"],
+        OutputFormat::Kpp | OutputFormat::Bundle => &[
             "name",
             "tip",
             "grain",
             "spacing",
+            "hardness",
             "size",
             "opacity",
             "flow",
             "pressure_size",
             "pressure_opacity",
             "pressure_flow",
+            "pressure_roundness",
             "scatter",
+            "jitter",
             "rotation",
+            "roundness",
             "dual",
         ],
-        Gbr => &["name", "tip", "spacing"],
-        Prbr => &[
+        OutputFormat::Prbr => &[
             "name",
             "tip",
             "grain",
             "spacing",
+            "hardness",
             "size",
             "opacity",
             "flow",
@@ -134,7 +155,6 @@ fn writes(format: OutputFormat) -> &'static [&'static str] {
             "jitter",
             "rotation",
         ],
-        Json => &ALL,
     }
 }
 
@@ -151,8 +171,29 @@ pub fn of(brush: &Brush, source: SourceFormat, target: OutputFormat) -> Vec<Fiel
             value: value(brush, key),
             imported: readable.contains(&key) && present(brush, key),
             exportable: writable.contains(&key),
+            curve: curve(brush, key),
         })
         .collect()
+}
+
+/// The curve behind a dynamic field, in the editor's 0..1 space, when the field is one.
+fn curve(brush: &Brush, key: &str) -> Option<Vec<(f32, f32)>> {
+    let points = |curve: &Curve| curve.points().iter().map(|point| (point.x, point.y)).collect::<Vec<_>>();
+    let set = |curve: Option<&Curve>| curve.map(&points);
+    match key {
+        "pressure_size" if brush.pressure_size > 0.0 => Some(points(&brush.size_curve)),
+        "pressure_opacity" if brush.pressure_opacity > 0.0 => Some(points(&brush.opacity_curve)),
+        "pressure_flow" => {
+            let driven = brush.setting("pressure_flow") > 0.0;
+            set(brush.pressure_curves.get(PressureCurve::Flow)).or_else(|| driven.then(|| vec![(0.0, 0.0), (1.0, 1.0)]))
+        }
+        "pressure_roundness" => {
+            let driven = brush.setting("pressure_roundness") > 0.0;
+            set(brush.pressure_curves.get(PressureCurve::Roundness))
+                .or_else(|| driven.then(|| vec![(0.0, 0.0), (1.0, 1.0)]))
+        }
+        _ => None,
+    }
 }
 
 /// Whether the brush actually has something in `key`: a format that never carries a field, or a
@@ -163,15 +204,19 @@ fn present(brush: &Brush, key: &str) -> bool {
         "tip" => brush.shape.source.is_some() || brush.shape.image.is_some() || brush.hardness < 1.0,
         "grain" => brush.grain.source.is_some() || brush.grain.image.is_some() || brush.grain_file.is_some(),
         "spacing" => brush.spacing > 0.0,
+        "hardness" => brush.hardness < 1.0,
         "size" => brush.max_size > brush.min_size,
         "opacity" => brush.max_opacity > brush.min_opacity || brush.max_opacity < 1.0,
         "flow" => brush.flow < 0.999,
         "pressure_size" => brush.pressure_size > 0.0,
         "pressure_opacity" => brush.pressure_opacity > 0.0,
-        "pressure_flow" => brush.setting("pressure_flow") > 0.0,
+        "pressure_flow" => brush.setting("pressure_flow") > 0.0 || curve(brush, key).is_some(),
+        "pressure_roundness" => brush.setting("pressure_roundness") > 0.0 || curve(brush, key).is_some(),
         "scatter" => brush.setting("scatter") > 0.0,
         "jitter" => brush.setting("jitter_size") > 0.0 || brush.shape.size_jitter > 0.0,
         "rotation" => brush.shape.rotation != 0.0,
+        "roundness" => brush.shape.roundness < 1.0,
+        "follow" => brush.shape.follow != 0.0,
         "dual" => brush.secondary.is_some(),
         "author" => brush.author.as_ref().is_some_and(|a| !a.name.trim().is_empty()),
         "thumbnail" => brush.thumbnail.is_some(),
@@ -196,15 +241,29 @@ fn value(brush: &Brush, key: &str) -> String {
             if has { "yes".to_owned() } else { "no".to_owned() }
         }
         "spacing" => format!("{}%", percent(brush.spacing)),
+        "hardness" => format!("{}%", percent(brush.hardness)),
         "size" => format!("{} – {}", size(brush.min_size), size(brush.max_size)),
         "opacity" => format!("{} – {}%", percent(brush.min_opacity), percent(brush.max_opacity)),
         "flow" => format!("{}%", percent(brush.flow)),
-        "pressure_size" => effect(brush.pressure_size),
-        "pressure_opacity" => effect(brush.pressure_opacity),
-        "pressure_flow" => effect(brush.setting("pressure_flow")),
+        "pressure_size" | "pressure_opacity" | "pressure_flow" | "pressure_roundness" => match curve(brush, key) {
+            Some(points) => {
+                let first = points.first().map_or(0.0, |point| point.1);
+                let last = points.last().map_or(1.0, |point| point.1);
+                format!("{} points · {}% → {}%", points.len(), percent(first), percent(last))
+            }
+            None => effect(amount(brush, key)),
+        },
         "scatter" => format!("{}%", percent(brush.setting("scatter"))),
         "jitter" => format!("{}%", percent(brush.setting("jitter_size").max(brush.shape.size_jitter))),
         "rotation" => format!("{}°", (f64::from(brush.shape.rotation).to_degrees()).round()),
+        "roundness" => format!("{}%", percent(brush.shape.roundness)),
+        "follow" => {
+            if brush.shape.follow == 0.0 {
+                "no".to_owned()
+            } else {
+                format!("{:+}%", percent(brush.shape.follow))
+            }
+        }
         "dual" => {
             if brush.secondary.is_some() {
                 "yes".to_owned()
@@ -226,6 +285,17 @@ fn value(brush: &Brush, key: &str) -> String {
             }
         }
         _ => String::new(),
+    }
+}
+
+/// How much a dynamic drives its field, as the brush holds it.
+fn amount(brush: &Brush, key: &str) -> f32 {
+    match key {
+        "pressure_size" => brush.pressure_size,
+        "pressure_opacity" => brush.pressure_opacity,
+        "pressure_flow" => brush.setting("pressure_flow"),
+        "pressure_roundness" => brush.setting("pressure_roundness"),
+        _ => 0.0,
     }
 }
 
@@ -252,7 +322,7 @@ mod tests {
     fn a_procraft_brush_imports_and_exports_everything() {
         let brush = Brush::round_pen();
         let fields = of(&brush, SourceFormat::ProCraftSet, OutputFormat::BrushSet);
-        assert_eq!(fields.len(), 16);
+        assert_eq!(fields.len(), 20);
         assert!(fields.iter().all(|f| f.exportable));
     }
 
@@ -275,5 +345,18 @@ mod tests {
         assert!(flow.exportable);
         let opacity = fields.iter().find(|f| f.key == "pressure_opacity").expect("opacity");
         assert!(!opacity.imported && !opacity.exportable);
+    }
+
+    #[test]
+    fn a_pressure_dynamic_comes_with_the_curve_to_draw() {
+        let mut brush = Brush::round_pen();
+        brush.pressure_size = 1.0;
+        let fields = of(&brush, SourceFormat::ProCraftSet, OutputFormat::Kpp);
+        let size = fields.iter().find(|f| f.key == "pressure_size").expect("size");
+        let points = size.curve.as_ref().expect("a curve");
+        assert!(points.len() >= 2);
+        assert!(points.iter().all(|(x, y)| (0.0..=1.0).contains(x) && (0.0..=1.0).contains(y)));
+        let rotation = fields.iter().find(|f| f.key == "rotation").expect("rotation");
+        assert!(rotation.curve.is_none());
     }
 }
