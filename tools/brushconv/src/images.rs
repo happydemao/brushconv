@@ -103,6 +103,18 @@ pub fn alpha_png(pixels: &[u8]) -> Result<Vec<u8>> {
     encode(side, side, png::ColorType::Rgba, &rgba)
 }
 
+/// Ink on white, opaque: how Infinite Painter holds a head of its own, with the brush's coverage as
+/// black. Its `head - conversion format` 1 reads black as paint.
+pub fn ink_png(pixels: &[u8]) -> Result<Vec<u8>> {
+    let side = (pixels.len() as f64).sqrt().round() as u32;
+    let mut rgba = Vec::with_capacity(pixels.len() * 4);
+    for &coverage in pixels {
+        let ink = 255 - coverage;
+        rgba.extend_from_slice(&[ink, ink, ink, 255]);
+    }
+    encode(side, side, png::ColorType::Rgba, &rgba)
+}
+
 /// An 8-bit RGBA PNG.
 pub fn rgba_png(width: u32, height: u32, pixels: &[u8]) -> Result<Vec<u8>> {
     encode(width, height, png::ColorType::Rgba, pixels)

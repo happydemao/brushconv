@@ -77,8 +77,11 @@ pub fn read(bytes: &[u8]) -> Option<PrbrBrush> {
         head: string_of(source, "head"),
         texture: string_of(source, "stroke texture"),
         texture_scale: number(texture, "scale"),
-        custom_head_png: resource(&zip, string_of(source, "custom-head").as_deref()),
-        custom_texture_png: resource(&zip, string_of(source, "custom-stroke texture").as_deref()),
+        // The app names a custom picture by its digest and holds it under a plain entry name;
+        // older exports of ours wrote the entry's path there instead, so both read.
+        custom_head_png: resource(&zip, string_of(source, "custom-head").as_deref()).or_else(|| zip.read("head")),
+        custom_texture_png: resource(&zip, string_of(source, "custom-stroke texture").as_deref())
+            .or_else(|| zip.read("texture")),
         preview_png: zip.read("preview").filter(|p| p.starts_with(b"\x89PNG")),
     })
 }
@@ -184,6 +187,25 @@ mod tests {
         let brush = read(&zip.finish()).unwrap();
         assert!(brush.pressure_size);
         assert!(!brush.pressure_flow);
+    }
+
+    #[test]
+    fn a_hashed_head_reads_from_its_plain_entry() {
+        let properties = r#"{
+            "display-name": "Hashed",
+            "source-properties": {
+                "custom-head": "6f0f4a4f6a3b7c9d2e1f4a5b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+                "custom-stroke texture": "",
+                "head": "",
+                "stroke texture": ""
+            }
+        }"#;
+        let mut zip = ZipWriter::new();
+        zip.add("properties.json", properties.as_bytes());
+        zip.add("head", b"\x89PNG head");
+        let brush = read(&zip.finish()).unwrap();
+        assert_eq!(brush.custom_head_png.as_deref(), Some(b"\x89PNG head".as_slice()));
+        assert!(brush.head.is_none() && brush.texture.is_none());
     }
 
     #[test]

@@ -15,7 +15,7 @@ no canvas, no other feature.
 | Krita `.kpp` / `.bundle` | yes | yes | preset XML with an embedded tip, grain and a stroke preview |
 | GIMP `.gbr` | yes | yes | a grey tip with name and spacing |
 | GIMP `.pat` | yes | — | read as a textured stamp |
-| Infinite Painter `.prbr` | yes | yes (experimental) | `properties.json`, a sample stroke and pictures |
+| Infinite Painter `.prbr` | yes | yes | `properties.json`, a sample stroke and pictures |
 | PaintTool SAI2 `.saitdat` | yes | yes (experimental) | a tool's text sections: size, density, scatter, wet mixing |
 | PhotoCraft `.pcbrushes` | yes | yes | a JSON group: size, hardness, spacing, pressure switches, mirroring; a stored tip is read as its preview |
 | JSON | — | yes | every setting, for scripts |
@@ -102,9 +102,11 @@ distributing it.
 ## Limits
 
 - The formats the CLI can only read (`.sut`, `.sutg`, `.gih`, `.vbr`, `.pat`,
-  `.brushlibrary`) are input only. `.prbr` is written on a best-effort basis: Infinite
-  Painter does not document how it stores embedded art, so check a converted brush in
-  the app. `.saitdat` is reverse-engineered from Brush Bridge's notes: the file goes in
+  `.brushlibrary`) are input only. `.prbr` is written the way the app's own
+  exports are: the tip goes in an entry named `head`, named by its BLAKE2b-512 digest
+  in `custom-head`, with `head - conversion format` 0 for a white-on-transparent
+  picture. The format is still mark-up only as far as documentation goes, so check a
+  converted brush in the app. `.saitdat` is reverse-engineered from Brush Bridge's notes: the file goes in
   SAI2's `custool` folder and names no pictures, so a brush comes as a round tip.
   A `.pcbrushes` file goes in PhotoCraft's `Presets` folder; it names a computed tip,
   so the app's brush has the converted shape rather than the original bitmap.

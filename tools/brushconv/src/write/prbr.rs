@@ -2,9 +2,11 @@
 //! sample stroke), and the head and texture pictures when the brush has ones of its own.
 //!
 //! The app's own heads and textures come with it, named rather than held, so anything ProCraft
-//! draws goes in as a custom picture: `head.png`, and `texture.png` when there is a grain. The
-//! settings keep the app's sections as its own exports have them, with the parts ProCraft has no
-//! control for left at the app's defaults.
+//! draws goes in as a custom picture: an entry named `head`, and `texture` when there is a grain.
+//! The app names such a picture by the BLAKE2b-512 digest of its bytes, in `custom-head` and
+//! `custom-stroke texture`, and leaves `head` and `stroke texture` empty. The settings keep the
+//! app's sections as its own exports have them, with the parts ProCraft has no control for left at
+//! the app's defaults.
 
 use procraft_engine::brush::{Brush, PressureCurve};
 use procraft_engine::curve::Curve;
@@ -18,9 +20,10 @@ use crate::preview;
 /// One ProCraft size unit in pixels, as `procraft-core` reads a sampled tip's size.
 const SIZE_PER_PIXEL: f32 = 0.03277;
 
-/// The head and texture entries, by the names `custom-head` and `custom-stroke texture` give.
-const HEAD: &str = "head.png";
-const TEXTURE: &str = "texture.png";
+/// The head and texture entries: the app holds its custom pictures under these plain names and
+/// names them by their digests, not by a path.
+const HEAD: &str = "head";
+const TEXTURE: &str = "texture";
 
 /// The preview the app draws into the brush list.
 const PREVIEW: (u32, u32) = (512, 128);
@@ -29,7 +32,7 @@ const PREVIEW: (u32, u32) = (512, 128);
 pub fn write(brush: &Brush) -> Result<Vec<u8>> {
     let head = head_png(brush)?;
     let texture = texture_png(brush)?;
-    let source = source_section(&texture);
+    let source = source_section(&head, &texture);
     let properties = json!({
         "display-name": brush.name.clone(),
         "parent": 356,
@@ -55,11 +58,12 @@ pub fn write(brush: &Brush) -> Result<Vec<u8>> {
     Ok(zip.finish())
 }
 
-/// The brush's head: a white shape on transparency, which the app paints where it is bright.
+/// The brush's head: ink on white, which the app paints where it is dark, as its own files hold
+/// their heads.
 fn head_png(brush: &Brush) -> Result<Vec<u8>> {
     let (side, pixels) = images::tip_gray(brush);
     let (_, pixels) = images::fit_gray(side, &pixels, 512);
-    images::alpha_png(&pixels)
+    images::ink_png(&pixels)
 }
 
 /// The brush's grain as the app's texture: a grey picture, whose bright parts paint.
@@ -122,17 +126,18 @@ fn stroke_section(brush: &Brush) -> Value {
     })
 }
 
-fn source_section(texture: &Option<Vec<u8>>) -> Value {
-    let has_texture = texture.is_some();
+fn source_section(head: &[u8], texture: &Option<Vec<u8>>) -> Value {
+    let texture_hash = texture.as_ref().map(|bytes| crate::blake2b::hex(bytes)).unwrap_or_default();
     json!({
-        "custom-head": HEAD,
-        "custom-stroke texture": if has_texture { TEXTURE } else { "" },
-        "head": "custom",
+        "custom-head": crate::blake2b::hex(head),
+        "custom-stroke texture": texture_hash,
+        "head": "",
+        // The head is ink on white, so the app paints where it is dark.
         "head - color": false,
         "head - colorize": 1.0,
         "head - conversion format": 1.0,
         "head - profile": [0.0, 1.0, 1.0, 0.0],
-        "stroke texture": if has_texture { "custom" } else { "" },
+        "stroke texture": "",
         "stroke texture - color": false,
         "stroke texture - colorize": 1.0,
         "stroke texture - profile": [0.0, 1.0, 1.0, 0.0],
@@ -276,6 +281,23 @@ mod tests {
         assert!(read.pressure_size);
         assert_eq!(read.custom_head_png.as_deref().map(|p| p.starts_with(b"\x89PNG")), Some(true));
         assert!(read.preview_png.is_some());
+    }
+
+    #[test]
+    fn the_app_names_its_custom_head_by_the_picture_s_digest() {
+        let brush = Brush::round_pen();
+        let bytes = write(&brush).expect("write");
+        let zip = procraft_engine::zip::ZipReader::new(&bytes).expect("zip");
+        assert!(zip.names().any(|name| name == "head"));
+        let json: serde_json::Value =
+            serde_json::from_slice(&zip.read("properties.json").expect("settings")).expect("json");
+        let source = &json["source-properties"];
+        assert_eq!(source["head"], "");
+        assert_eq!(source["stroke texture"], "");
+        assert_eq!(source["head - conversion format"], 1);
+        let head = zip.read("head").expect("head");
+        assert_eq!(source["custom-head"].as_str(), Some(crate::blake2b::hex(&head).as_str()));
+        assert_eq!(source["custom-head"].as_str().map(str::len), Some(128));
     }
 
     #[test]

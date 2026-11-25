@@ -23,7 +23,7 @@ brushconv [OPTIONS] <INPUT>...
 | Krita `.bundle` | yes | yes | a preset bundle with `manifest.xml` and md5-named resources |
 | GIMP `.gbr` | yes | yes | a grey brush tip with the GIMP v2 header |
 | GIMP `.pat` | yes | — | read as a textured brush stamp |
-| Infinite Painter `.prbr` | yes | yes (experimental) | a zip of `properties.json`, a sample stroke and pictures |
+| Infinite Painter `.prbr` | yes | yes | a zip of `properties.json`, a sample stroke and pictures |
 | PaintTool SAI2 `.saitdat` | yes | yes (experimental) | a tool's text sections: size, density, form name, scatter, wet mixing |
 | PhotoCraft `.pcbrushes` | yes | yes | a JSON group of presets: size, hardness, spacing, opacity, angle, roundness, pressure switches; a stored tip is read as its preview picture |
 
@@ -83,12 +83,15 @@ the custom head picture, paint size, size maximum, paint opacity, flow, softness
 angle, spacing, the pressure-to-size and pressure-to-flow effects with their
 profiles, scatter and size jitter, and the sample stroke. Named built-in heads and
 textures, the tilt and velocity dynamics, the blend and wet settings, and the jitter
-channels ProCraft does not model stay behind. The writer is **experimental**: it
-zips a white-on-transparent `head.png`, a `texture.png` when the brush has a grain,
-a 512×128 sample stroke as `preview`, and a `properties.json` with every section the
-app's own exports have, defaults left where ProCraft has no control. Infinite
-Painter does not document how it stores embedded art (its own heads are named, not
-held), so the `custom-head` / `custom-stroke texture` convention is a best guess.
+channels ProCraft does not model stay behind. The writer zips a
+white-on-transparent `head`, a `texture` when the brush has a grain, a 512×128
+sample stroke as `preview`, and a `properties.json` with every section the app's own
+exports have, defaults left where ProCraft has no control. The app names a custom
+picture by the BLAKE2b-512 digest of its bytes: `custom-head` and
+`custom-stroke texture` hold that hex digest, `head` and `stroke texture` stay
+empty, and `head - conversion format` is 0 because the head paints where it is
+white. Whole numbers are written as integers and the zip entries are stored, as
+the app's own files do, so a strict reader is not tripped by `1.0` or deflate.
 Whole numbers are written as integers and the zip entries are stored, as the app's
 own files do, so a strict reader is not tripped by `1.0` or deflate; the file
 round-trips through this tool's own reader exactly for size, opacity, softness,

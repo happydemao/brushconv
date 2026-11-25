@@ -4,6 +4,7 @@
 //! `.kpp`/`.bundle`, GIMP `.gbr`/`.gih`/`.vbr`, Clip Studio `.sut`/`.sutg`) into ProCraft's
 //! [`Brush`] model, and writes that model out as any of them.
 
+mod blake2b;
 mod error;
 pub mod fields;
 mod images;
