@@ -23,6 +23,8 @@ pub struct PrbrBrush {
     /// How soft the head's edge is: 0 is a hard edge.
     pub softness: Option<f32>,
     pub angle: Option<f32>,
+    /// How the head turns: 1 follows the stroke, 0 holds still, -1 follows it backwards.
+    pub rotation: Option<f32>,
     /// Whether the pressure rules the size, and its profile (pressure and size, in pairs).
     pub pressure_size: bool,
     pub size_profile: Vec<f32>,
@@ -40,6 +42,9 @@ pub struct PrbrBrush {
     pub custom_texture_png: Option<Vec<u8>>,
     /// The sample stroke the app shows, as a PNG.
     pub preview_png: Option<Vec<u8>>,
+    /// The settings as the app wrote them, so a writer can put back the parts ProCraft has no
+    /// control for.
+    pub settings: Value,
 }
 
 /// The brush an Infinite Painter `.prbr` holds, if it holds one.
@@ -68,6 +73,7 @@ pub fn read(bytes: &[u8]) -> Option<PrbrBrush> {
         head_flow,
         softness: number(head, "softness"),
         angle: number(head, "angle"),
+        rotation: number(head, "rotation"),
         pressure_size: effect(dynamics, "pressure - effects", "size"),
         size_profile: numbers(dynamics, "pressure profile - size"),
         pressure_flow: effect(dynamics, "pressure - effects", "flow"),
@@ -83,6 +89,7 @@ pub fn read(bytes: &[u8]) -> Option<PrbrBrush> {
         custom_texture_png: resource(&zip, string_of(source, "custom-stroke texture").as_deref())
             .or_else(|| zip.read("texture")),
         preview_png: zip.read("preview").filter(|p| p.starts_with(b"\x89PNG")),
+        settings: json.clone(),
     })
 }
 

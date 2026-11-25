@@ -970,20 +970,32 @@ fn prbr_brush(p: &procraft_engine::prbr::PrbrBrush) -> Brush {
     if let Some(spacing) = p.spacing {
         b.spacing = Brush::spacing_within_reach(spacing);
     }
-    // its size from its pixels, as a sampled tip's is
-    if let Some(px) = p.size {
-        brushfile::set_sizes(&mut b, px * ABR_SIZE_PER_PIXEL, Some(0.01));
+    // Its size in pixels: the app's `paint-size` counts 3.74 pixels a point, the calibration the
+    // converters that read it agree on, and `size-maximum` scales that.
+    if let Some(size) = p.size {
+        let px = size * p.size_maximum.unwrap_or(1.0).max(0.0) * PRBR_PIXELS_PER_SIZE;
+        let most = px.clamp(0.5, b.most_size() * b.size_unit());
+        b.max_size = most;
+        b.min_size = (most * 0.01).clamp(0.5, most);
     }
     if let Some(opacity) = p.opacity {
         b.max_opacity = opacity.clamp(0.0, 1.0);
         b.min_opacity = b.min_opacity.min(b.max_opacity);
     }
-    if let Some(flow) = p.flow {
+    // The head's own flow is the one the paint comes out with; the blend section's flow belongs to
+    // the app's blender tool.
+    if let Some(flow) = p.head_flow.or(p.flow) {
         b.flow = flow.clamp(0.0, 1.0);
     }
     if let Some(angle) = p.angle {
         b.shape.rotation = angle.rem_euclid(std::f32::consts::TAU);
     }
+    if p.rotation.is_some_and(|rotation| rotation >= 0.5) {
+        b.shape.follow = 1.0;
+    }
+    // Everything the app knows that ProCraft has no control for rides along in its extras, so a
+    // `.prbr` written back keeps the settings it came with instead of defaults.
+    ip_values("ip", &p.settings, &mut b.extra);
     // the pressure's effects, each through its own profile from the pressure's none to its all
     if p.pressure_size {
         b.pressure_size = 1.0;
@@ -1120,6 +1132,38 @@ fn sai_brush(t: &procraft_engine::sai::SaiTool) -> Brush {
 }
 
 /// A curve from a profile's flat pairs (pressure and value), the identity if it has fewer than two.
+/// Infinite Painter's `paint-size` in pixels: three point seven four pixels a point, the reading
+/// the reference converters calibrated in the app.
+const PRBR_PIXELS_PER_SIZE: f32 = 3.74;
+
+/// Keeps every number and switch the app's settings hold in the brush's extras, paths as
+/// `ip/<section>/<setting>`, arrays as `...#<index>` and switches as `...#b`.
+fn ip_values(prefix: &str, value: &serde_json::Value, out: &mut std::collections::BTreeMap<String, f32>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, value) in map {
+                ip_values(&format!("{prefix}/{key}"), value, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (index, value) in items.iter().enumerate() {
+                ip_values(&format!("{prefix}#{index}"), value, out);
+            }
+        }
+        serde_json::Value::Bool(flag) => {
+            // The switches are kept apart from the numbers so the writer can put back a `true`, not
+            // a 1.0, where the app wrote one.
+            out.insert(format!("{prefix}#b"), if *flag { 1.0 } else { 0.0 });
+        }
+        serde_json::Value::Number(number) => {
+            if let Some(number) = number.as_f64().filter(|n| n.is_finite()) {
+                out.insert(prefix.to_owned(), number as f32);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn prbr_curve(profile: &[f32]) -> Curve {
     use procraft_engine::geom::Vec2;
     let points: Vec<Vec2> = profile.as_chunks::<2>().0.iter().map(|&[x, y]| Vec2::new(x, y)).collect();

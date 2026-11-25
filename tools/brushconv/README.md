@@ -78,38 +78,20 @@ emits a GIMP v2 grey brush: an 8-bit single-channel tip, the name and the spacin
 percentage. GIMP brushes carry no colour, size range, grain or pressure settings, so
 all of those are lost.
 
-**Infinite Painter `.prbr`** — reads a zip of `properties.json` and a `preview` PNG:
-the custom head picture, paint size, size maximum, paint opacity, flow, softness,
-angle, spacing, the pressure-to-size and pressure-to-flow effects with their
-profiles, scatter and size jitter, and the sample stroke. Named built-in heads and
-textures, the tilt and velocity dynamics, the blend and wet settings, and the jitter
-channels ProCraft does not model stay behind. The writer zips a
-white-on-transparent `head`, a `texture` when the brush has a grain, a 512×128
-sample stroke as `preview`, and a `properties.json` with every section the app's own
-exports have, defaults left where ProCraft has no control. The app names a custom
-picture by the BLAKE2b-512 digest of its bytes: `custom-head` and
-`custom-stroke texture` hold that hex digest, `head` and `stroke texture` stay
-empty, and `head - conversion format` is 0 because the head paints where it is
-white. Whole numbers are written as integers and the zip entries are stored, as
-the app's own files do, so a strict reader is not tripped by `1.0` or deflate.
-Whole numbers are written as integers and the zip entries are stored, as the app's
-own files do, so a strict reader is not tripped by `1.0` or deflate; the file
-round-trips through this tool's own reader exactly for size, opacity, softness,
-angle, spacing and the pressure switches, but check it in the app before relying on
-it.
-
-**PhotoCraft `.pcbrushes`** — reads a group's JSON: each preset's name, size in canvas
-pixels, hardness, spacing, opacity, flow, angle, roundness, mirroring, the
-pressure-to-size and pressure-to-opacity switches, and a sampled or stored tip (a
-stored tip comes as its 96 px preview picture, the only part of it a group file
-holds). PhotoCraft's texture, dual brush, colour dynamics and the rest of its brush
-model stay behind. The writer emits the same group schema with every field PhotoCraft
-expects, but names a **computed round tip** instead of embedding a bitmap: a group
-keeps its sampled tips in a `tips/<hash>.pctip` folder beside the file, which a
-single-file conversion cannot carry. Convert to `.abr` to carry the bitmap. Drop the
-written file into PhotoCraft's `Presets` folder (macOS
-`~/Library/Application Support/Photocraft/Presets`) beside its `index.json`; the app
-reads every `*.pcbrushes` there on its next start, and `.abr` is the way into it.
+**Infinite Painter `.prbr`** — a zip of `properties.json` and a `preview` PNG, plus a
+`head` and a `texture` picture when the brush has pictures of its own. It reads the
+head, paint size (3.74 pixels a point) and size maximum, paint opacity, the head's
+flow, softness, angle, spacing, head rotation, the pressure dynamics with their
+profiles, scatter, and size and colour jitter. A brush that paints with a picture
+gets that picture as `head` (ink on white) and a `texture` for its grain, named by
+the BLAKE2b-512 digest of their bytes in `custom-head` / `custom-stroke texture`; a
+round brush keeps the app's own round head and its falloff travels in `softness`.
+The app's other settings — tilt and velocity dynamics, the blend and wet sections,
+the jitter channels, the profiles — ride along in the brush's extras, so a `.prbr`
+written from a `.prbr` comes back with every number, switch, profile and string the
+same; a brush converted from another format gets the app's defaults where that
+format has nothing to say. Whole numbers are written as integers and the entries are
+stored, as the app's own files do.
 
 **PaintTool SAI2 `.saitdat`** — reads a custom tool's text sections: its name, size
 in canvas pixels and least size, density and least density, edge hardness, spacing,
@@ -183,7 +165,7 @@ ProCraft's own formats are lossless. The others carry what their format can say:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | brush tip image | yes | yes | yes | yes | yes | no (round tip; the form's BMP is named, not held) | preview picture only (written as a round tip) |
 | grain/texture | yes | no | yes (pattern) | no | yes (texture) | no (texture BMP is named, not held) | no |
-| size range | yes | no (tip size) | yes (size, min as the curve's low point) | no (tip size) | size maximum only | yes (size and least size) | no (one size) |
+| size range | yes | no (tip size) | yes (size, min as the curve's low point) | no (tip size) | yes (paint size × size maximum, 3.74 px a point) | yes (size and least size) | no (one size) |
 | opacity range | yes | no | max opacity | no | max opacity | density and least density | max opacity |
 | spacing | yes | percent | fraction | percent | fraction | percent | fraction |
 | pressure → size | yes, with curves | no | yes (sensor curve) | no | yes, with profile | yes (the two sizes make the curve) | switch only (a straight line) |

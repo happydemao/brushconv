@@ -1,12 +1,13 @@
 //! Infinite Painter's `.prbr`: a zip of `properties.json` (the brush's settings) and `preview` (a
 //! sample stroke), and the head and texture pictures when the brush has ones of its own.
 //!
-//! The app's own heads and textures come with it, named rather than held, so anything ProCraft
-//! draws goes in as a custom picture: an entry named `head`, and `texture` when there is a grain.
-//! The app names such a picture by the BLAKE2b-512 digest of its bytes, in `custom-head` and
-//! `custom-stroke texture`, and leaves `head` and `stroke texture` empty. The settings keep the
-//! app's sections as its own exports have them, with the parts ProCraft has no control for left at
-//! the app's defaults.
+//! The app's own heads and textures come with it, named rather than held. A brush ProCraft draws
+//! with a picture of its own goes in as a custom head: an entry named `head` (and `texture` for a
+//! grain), named by the BLAKE2b-512 digest of its bytes in `custom-head` / `custom-stroke texture`,
+//! with `head` / `stroke texture` left empty. A plain round brush keeps the app's own round head and
+//! carries its falloff in `softness`. The settings are the app's own sections with the parts
+//! ProCraft has no control for at the app's defaults, and every setting the brush brought with it
+//! (its `ip/…` extras) is put back over them, so a `.prbr` written from a `.prbr` keeps all of it.
 
 use procraft_engine::brush::{Brush, PressureCurve};
 use procraft_engine::curve::Curve;
@@ -17,8 +18,9 @@ use crate::Result;
 use crate::images;
 use crate::preview;
 
-/// One ProCraft size unit in pixels, as `procraft-core` reads a sampled tip's size.
-const SIZE_PER_PIXEL: f32 = 0.03277;
+/// The pixels Infinite Painter's `paint-size` counts a point as, the calibration the converters
+/// that read the format use.
+const PIXELS_PER_SIZE: f32 = 3.74;
 
 /// The head and texture entries: the app holds its custom pictures under these plain names and
 /// names them by their digests, not by a path.
@@ -30,9 +32,9 @@ const PREVIEW: (u32, u32) = (512, 128);
 
 /// One brush as a `.prbr`.
 pub fn write(brush: &Brush) -> Result<Vec<u8>> {
-    let head = head_png(brush)?;
+    let head = if has_picture(brush) { Some(head_png(brush)?) } else { None };
     let texture = texture_png(brush)?;
-    let source = source_section(&head, &texture);
+    let source = source_section(head.as_deref(), &texture);
     let properties = json!({
         "display-name": brush.name.clone(),
         "parent": 356,
@@ -45,17 +47,26 @@ pub fn write(brush: &Brush) -> Result<Vec<u8>> {
         "texture-properties": texture_section(),
     });
     let mut properties = properties;
+    apply_extras(&mut properties, &brush.extra);
     whole_numbers(&mut properties);
     // The app's own exports store every entry, so doing the same keeps the archive as close to
     // what it writes as the settings are.
     let mut zip = ZipWriter::new();
     zip.add_ready("preview", Ready::of(&preview::stroke_sized(brush, PREVIEW.0, PREVIEW.1)?, false));
-    zip.add_ready(HEAD, Ready::of(&head, false));
+    if let Some(head) = &head {
+        zip.add_ready(HEAD, Ready::of(head, false));
+    }
     if let Some(texture) = &texture {
         zip.add_ready(TEXTURE, Ready::of(texture, false));
     }
     zip.add_ready("properties.json", Ready::of(properties.to_string().as_bytes(), false));
     Ok(zip.finish())
+}
+
+/// Whether ProCraft paints this brush with a picture of its own, which the app has to be handed,
+/// rather than a round tip it draws from the hardness.
+fn has_picture(brush: &Brush) -> bool {
+    brush.shape.source.is_some() || brush.shape.image.is_some()
 }
 
 /// The brush's head: ink on white, which the app paints where it is dark, as its own files hold
@@ -126,10 +137,11 @@ fn stroke_section(brush: &Brush) -> Value {
     })
 }
 
-fn source_section(head: &[u8], texture: &Option<Vec<u8>>) -> Value {
+fn source_section(head: Option<&[u8]>, texture: &Option<Vec<u8>>) -> Value {
     let texture_hash = texture.as_ref().map(|bytes| crate::blake2b::hex(bytes)).unwrap_or_default();
+    let head_hash = head.map(crate::blake2b::hex).unwrap_or_default();
     json!({
-        "custom-head": crate::blake2b::hex(head),
+        "custom-head": head_hash,
         "custom-stroke texture": texture_hash,
         "head": "",
         // The head is ink on white, so the app paints where it is dark.
@@ -226,9 +238,73 @@ fn texture_section() -> Value {
     })
 }
 
-/// The brush's size in the app's pixels: what ProCraft keeps in size units.
+/// The brush's size in the app's points: its own pixels over the app's pixels a point.
 fn pixels(brush: &Brush) -> f32 {
-    (brush.max_size / (SIZE_PER_PIXEL * brush.size_unit()).max(f32::EPSILON)).clamp(0.5, 5000.0)
+    (brush.max_size / PIXELS_PER_SIZE).clamp(0.5, 5000.0)
+}
+
+/// Puts the settings the brush brought back over the app's defaults: `ip/<section>/<setting>`
+/// numbers and switches, `…#<index>` for the points of a profile.
+fn apply_extras(properties: &mut Value, extra: &std::collections::BTreeMap<String, f32>) {
+    for (key, number) in extra {
+        let Some(path) = key.strip_prefix("ip/") else { continue };
+        let (path, switch) = match path.strip_suffix("#b") {
+            Some(path) => (path, true),
+            None => (path, false),
+        };
+        if switch {
+            let parts: Vec<&str> = path.split('/').collect();
+            put_switch(properties, &parts, *number > 0.5);
+            continue;
+        }
+        let (path, index) = match path.rsplit_once('#') {
+            Some((path, index)) => match index.parse::<usize>() {
+                Ok(index) => (path, Some(index)),
+                Err(_) => continue,
+            },
+            None => (path, None),
+        };
+        let parts: Vec<&str> = path.split('/').collect();
+        put(properties, &parts, index, *number);
+    }
+}
+
+/// Sets one switch, making the sections on the way to it as it goes.
+fn put_switch(properties: &mut Value, parts: &[&str], on: bool) {
+    let Some((last, parents)) = parts.split_last() else { return };
+    let Some(map) = properties.as_object_mut() else { return };
+    if parents.is_empty() {
+        map.insert((*last).to_owned(), Value::Bool(on));
+    } else {
+        let (Some((first, _)), Some(rest)) = (parents.split_first(), parts.get(1..)) else { return };
+        let section = map.entry((*first).to_owned()).or_insert_with(|| Value::Object(Default::default()));
+        put_switch(section, rest, on);
+    }
+}
+
+/// Sets one setting, making the sections on the way to it as it goes.
+fn put(properties: &mut Value, parts: &[&str], index: Option<usize>, number: f32) {
+    let Some((last, parents)) = parts.split_last() else { return };
+    let Some(map) = properties.as_object_mut() else { return };
+    if parents.is_empty() {
+        let leaf = match index {
+            Some(index) => {
+                let entry = map.entry((*last).to_owned()).or_insert_with(|| Value::Array(Vec::new()));
+                let Some(items) = entry.as_array_mut() else { return };
+                items.resize(index + 1, Value::from(0));
+                match items.get_mut(index) {
+                    Some(leaf) => leaf,
+                    None => return,
+                }
+            }
+            None => map.entry((*last).to_owned()).or_insert(Value::Null),
+        };
+        *leaf = Value::from(f64::from(number));
+    } else {
+        let (Some((first, _)), Some(rest)) = (parents.split_first(), parts.get(1..)) else { return };
+        let section = map.entry((*first).to_owned()).or_insert_with(|| Value::Object(Default::default()));
+        put(section, rest, index, number);
+    }
 }
 
 /// Writes whole numbers as whole numbers: the app's own files have `"style": 1`, not `1.0`, and a
@@ -279,13 +355,16 @@ mod tests {
         assert_eq!(read.name, "Soft Round");
         assert_eq!(read.softness, Some(0.6));
         assert!(read.pressure_size);
-        assert_eq!(read.custom_head_png.as_deref().map(|p| p.starts_with(b"\x89PNG")), Some(true));
+        // A round brush keeps the app's own head, so no picture goes in.
+        assert!(read.custom_head_png.is_none());
+        assert_eq!(read.head, None);
         assert!(read.preview_png.is_some());
     }
 
     #[test]
     fn the_app_names_its_custom_head_by_the_picture_s_digest() {
-        let brush = Brush::round_pen();
+        let mut brush = Brush::round_pen();
+        brush.shape.image = Some(0);
         let bytes = write(&brush).expect("write");
         let zip = procraft_engine::zip::ZipReader::new(&bytes).expect("zip");
         assert!(zip.names().any(|name| name == "head"));

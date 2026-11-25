@@ -1,5 +1,7 @@
 //! The real ProCraft sets in `legacy-brushes/`, through every writer and back.
 
+#![recursion_limit = "256"]
+
 use std::path::{Path, PathBuf};
 
 use brushconv::{OutputFormat, read_path, write_set};
@@ -160,5 +162,71 @@ fn a_photocraft_group_round_trips() {
             before.max_size,
             after.max_size
         );
+    }
+}
+
+/// A `.prbr` built by hand, its settings set to values a brush of the app's would have.
+fn a_prbr(properties: &serde_json::Value) -> Vec<u8> {
+    let mut zip = procraft_engine::zip::ZipWriter::new();
+    zip.add("properties.json", properties.to_string().as_bytes());
+    zip.finish()
+}
+
+#[test]
+fn a_brush_keeps_the_settings_it_came_with() {
+    let settings = serde_json::json!({
+        "display-name": "Keeps",
+        "parent": 2,
+        "blend-properties": {"flow": 0.67, "mix-in": 0.2, "mix-in dilution": 0.18, "mix-wet": false, "smudge-amount": 0.79, "strength": 0.2},
+        "head-properties": {"angle": 0.5, "depth": 0.2, "flow": 0.86, "rotation": 1, "screen-aligned": true, "softness": 0.3, "spacing": 0.05, "structure": 0.2, "style": 1, "use-trajectory": true},
+        "stroke-properties": {"adhesion": 0.27, "blend-opacity": 1, "blend-size": 40, "blendmode": 4, "blendmode-intensity": 0.52, "erase-opacity": 1, "erase-size": 40, "flow-profile": [0, 0, 0.3, 0, 1, 1], "glaze-strokes": 0.31, "has-flow-profile": true, "has-size-profile": true, "lazy-stroke": 0.33, "paint-opacity": 0.8, "paint-size": 40, "size-maximum": 1.7, "size-profile": [0, 1, 0.5, 0, 1, 1], "wet-edges": 0.145},
+        "source-properties": {"custom-head": "", "custom-stroke texture": "", "head": "", "head - color": false, "head - colorize": 1, "head - conversion format": 1, "head - profile": [0, 1, 1, 0], "stroke texture": "", "stroke texture - color": false, "stroke texture - colorize": 1, "stroke texture - profile": [0, 1, 1, 0]},
+        "dynamics-properties": {"pressure - effects size": true, "pressure - effects flow": true, "pressure - effects dilution": true, "pressure - effects head depth": true, "pressure - effects scatter": true, "pressure - effects texture": true, "pressure profile - size": [0, 1, 0.33, 0.34, 1, 0], "pressure profile - flow": [0, 1, 0.33, 0.34, 1, 0], "pressure profile - dilution": [0.2, 0, 0.4, 0.1, 0.6, 0.9, 0.8, 1], "pressure profile - head depth": [0, 1, 0.58, 0.31, 1, 0], "pressure profile - scatter": [0, 1, 0.5, 0.9, 1, 0.6], "pressure profile - texture": [0, 0.5, 0.5, 0.3, 1, 0], "tilt - effects size": true, "tilt - effects flow": true, "tilt - effects dilution": true, "tilt - effects head depth": true, "tilt - effects scatter": true, "tilt - effects texture": true, "tilt - gradation": 0.8, "tilt - offset": 0.8, "tilt profile - size": [0, 1, 0.5, 1, 1, 0.75], "tilt profile - flow": [0, 0, 0.5, 0, 1, 0.75], "tilt profile - dilution": [0.2, 1, 0.4, 0.9, 0.6, 0.1, 0.8, 0], "tilt profile - head depth": [0, 1, 1, 0], "tilt profile - scatter": [0, 1, 0.5, 1, 1, 0.4], "tilt profile - texture": [0, 0, 0.5, 0.2, 1, 0.6], "velocity - effects size": true, "velocity - effects flow": true, "velocity - effects dilution": true, "velocity - effects head depth": true, "velocity - effects scatter": true, "velocity - effects texture": true, "velocity profile - size": [0, 0, 0.5, 0.7, 1, 1], "velocity profile - flow": [0, 0, 0.5, 0.7, 1, 1], "velocity profile - dilution": [0, 0, 1, 1], "velocity profile - head depth": [0, 1, 1, 0], "velocity profile - scatter": [0, 0, 0.5, 0.1, 1, 0.4], "velocity profile - texture": [0, 1, 0.5, 0.5, 1, 0]},
+        "jitter-properties": {"angle": 0.33, "color-brightness": 0.35, "color-hue": 0.31, "color-saturation": 0.37, "color-start brightness": 0.2, "color-start hue": 0.23, "color-start saturation": 0.31, "flow": 0.34, "scatter": 0.4, "size": 0.25, "start-angle": 0.18, "texture-angle": 0, "texture-position": 0, "texture-scale": 0, "texture-start-position": 0},
+        "texture-properties": {"angle": 0, "invert": false, "pressure": 0.6, "scale": 1.4, "scale-size": true, "softness": 0, "stretch": 1, "structure": 0, "style": 1},
+    });
+    let source = a_prbr(&settings);
+    let set = brushconv::read_bytes(&source, "Keeps.prbr").expect("read");
+    let scratch = Scratch::new("prbr-settings");
+    let out = scratch.path("Keeps.prbr");
+    write_set(&set, OutputFormat::Prbr, Some(&out), None).expect("write");
+    let back: serde_json::Value = serde_json::from_slice(
+        &procraft_engine::zip::ZipReader::new(&std::fs::read(&out).expect("file"))
+            .expect("zip")
+            .read("properties.json")
+            .expect("settings"),
+    )
+    .expect("json");
+    // Every number and switch comes back as it went in; only the name and the pictures differ.
+    for (section, values) in settings.as_object().expect("object") {
+        if section == "display-name" || section == "source-properties" {
+            continue;
+        }
+        let Some(values) = values.as_object() else { continue };
+        let written = &back[section.as_str()];
+        for (key, value) in values {
+            match value {
+                serde_json::Value::Number(number) => {
+                    let got = written[key].as_f64().unwrap_or(f64::NAN);
+                    assert!(
+                        (got - number.as_f64().expect("number")).abs() < 1e-5,
+                        "{section}/{key}: {got} for {number}"
+                    );
+                }
+                serde_json::Value::Bool(flag) => {
+                    assert_eq!(written[key].as_bool(), Some(*flag), "{section}/{key}");
+                }
+                serde_json::Value::Array(items) => {
+                    let got = written[key].as_array().expect("array");
+                    assert_eq!(got.len(), items.len(), "{section}/{key}");
+                    for (i, item) in items.iter().enumerate() {
+                        let want = item.as_f64().expect("point");
+                        let got = got[i].as_f64().unwrap_or(f64::NAN);
+                        assert!((got - want).abs() < 1e-5, "{section}/{key}[{i}]: {got} for {want}");
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 }

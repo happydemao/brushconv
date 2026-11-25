@@ -103,10 +103,10 @@ distributing it.
 
 - The formats the CLI can only read (`.sut`, `.sutg`, `.gih`, `.vbr`, `.pat`,
   `.brushlibrary`) are input only. `.prbr` is written the way the app's own
-  exports are: the tip goes in an entry named `head`, named by its BLAKE2b-512 digest
-  in `custom-head`, with `head - conversion format` 0 for a white-on-transparent
-  picture. The format is still mark-up only as far as documentation goes, so check a
-  converted brush in the app. `.saitdat` is reverse-engineered from Brush Bridge's notes: the file goes in
+  exports are: a picture tip goes in an entry named `head`, named by its BLAKE2b-512
+  digest in `custom-head` and stored as ink on white, while a round brush keeps the
+  app's round head; every setting the app holds is carried through, so a `.prbr`
+  converted from another `.prbr` keeps all of its numbers and profiles. `.saitdat` is reverse-engineered from Brush Bridge's notes: the file goes in
   SAI2's `custool` folder and names no pictures, so a brush comes as a round tip.
   A `.pcbrushes` file goes in PhotoCraft's `Presets` folder; it names a computed tip,
   so the app's brush has the converted shape rather than the original bitmap.
